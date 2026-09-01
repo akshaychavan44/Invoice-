@@ -1,0 +1,11 @@
+.neon
+.env
+.env.*
+!.env.example
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+backend/.runtime/
+.agents/
+*.tsbuildinfo
