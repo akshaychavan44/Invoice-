@@ -5,7 +5,11 @@ const pointsToLocalApi = !configuredApiUrl || /^https?:\/\/localhost(?::\d+)?\/?
 // Local development keeps using localhost. Production always uses the same
 // Vercel domain's /api rewrite, so an untracked local .env.local can never be
 // baked into a deployed frontend by mistake.
-export const apiUrl = (isDeployedBrowser && pointsToLocalApi ? "/api" : (configuredApiUrl ?? "http://localhost:5000")).replace(/\/$/, "");
+const resolvedApiUrl = (isDeployedBrowser && pointsToLocalApi ? "" : (configuredApiUrl ?? "http://localhost:5000")).replace(/\/$/, "");
+
+// All callers already start their path with `/api`. Treat `/api` as the
+// same-origin base rather than creating `/api/api/...` in production.
+export const apiUrl = resolvedApiUrl === "/api" ? "" : resolvedApiUrl;
 
 export type AuthUser = {
   id: string;
