@@ -44,11 +44,16 @@ export default function DeveloperWorkspace({ admin = false, onLogout }: { admin?
     }
   };
 
-  useEffect(() => { void load(); }, [admin]);
+  useEffect(() => {
+    void load();
+    if (!admin) return;
+    const refreshId = window.setInterval(() => void load(), 10000);
+    return () => window.clearInterval(refreshId);
+  }, [admin]);
 
   const selectProject = async (project: Project) => {
     setSelected(project);
-    setProgress(0);
+    setProgress(Number(project.progress ?? (project.status === "COMPLETED" ? 100 : 0)));
     try {
       const response = await apiFetch(`/api/projects/${project.id}/updates`);
       const data = await response.json();
@@ -103,16 +108,17 @@ export default function DeveloperWorkspace({ admin = false, onLogout }: { admin?
   };
 
   const addUpdate = async () => {
-    if (!selected || !message.trim()) {
-      setNotice("Write an update before saving it.");
+    if (!selected) {
+      setNotice("Select a project before saving it.");
       return;
     }
     setSaving("update");
     try {
-      const response = await apiFetch(`/api/projects/${selected.id}/updates`, { method: "POST", body: JSON.stringify({ message, progress }) });
+      const response = await apiFetch(`/api/projects/${selected.id}/updates`, { method: "POST", body: JSON.stringify({ message, progress, status:selected.status }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message);
       setUpdates(current => [data.data, ...current]);
+      if (data.project) { const next = { ...selected, status:data.project.status, progress:data.project.progress }; setSelected(next); setProjects(current => current.map(project => project.id === next.id ? { ...project, ...next } : project)); }
       setMessage("");
       setNotice("Progress update saved.");
       void load();
@@ -190,8 +196,8 @@ export default function DeveloperWorkspace({ admin = false, onLogout }: { admin?
           <input className={input} placeholder="Project name" value={projectForm.name} onChange={e => setProjectForm({ ...projectForm, name: e.target.value })}/>
           <input className={input} placeholder="Client name" value={projectForm.clientName} onChange={e => setProjectForm({ ...projectForm, clientName: e.target.value })}/>
           <select className={input} value={projectForm.assignedDeveloperId} onChange={e => setProjectForm({ ...projectForm, assignedDeveloperId: e.target.value })}><option value="">Assign developer</option>{developers.map(developer => <option key={developer.id} value={developer.id}>{developer.name}</option>)}</select>
-          <div className="sm:col-span-2"><label className="text-xs font-medium text-slate-600">Due date</label><div className="mt-1 flex gap-2"><input ref={dueDateRef} aria-label="Project due date" className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10" type="date" value={projectForm.dueDate} onChange={e => setProjectForm({ ...projectForm, dueDate: e.target.value })}/><button type="button" aria-label="Open due date calendar" onClick={() => { const picker = dueDateRef.current as (HTMLInputElement & { showPicker?: () => void }) | null; picker?.showPicker?.(); picker?.focus(); }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-indigo-600 hover:bg-indigo-50"><CalendarDays size={17}/></button></div></div>
-          <textarea className="sm:col-span-2 mt-1 min-h-20 w-full rounded-xl border border-slate-200 p-3 text-sm text-slate-800" placeholder="Scope, deliverables and non-secret access notes" value={projectForm.description} onChange={e => setProjectForm({ ...projectForm, description: e.target.value })}/>
+          <div><div className="mt-1 flex gap-2"><input ref={dueDateRef} aria-label="Project due date" className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10" type="date" value={projectForm.dueDate} onChange={e => setProjectForm({ ...projectForm, dueDate: e.target.value })}/><button type="button" aria-label="Open due date calendar" onClick={() => { const picker = dueDateRef.current as (HTMLInputElement & { showPicker?: () => void }) | null; picker?.showPicker?.(); picker?.focus(); }} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-indigo-600 hover:bg-indigo-50"><CalendarDays size={17}/></button></div></div>
+          <textarea className="sm:col-span-2 mt-1 min-h-20 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-900 placeholder:text-slate-400" placeholder="Scope, deliverables and non-secret access notes" value={projectForm.description} onChange={e => setProjectForm({ ...projectForm, description: e.target.value })}/>
         </div>
         <p className="mt-2 text-xs text-slate-500">Do not add client passwords or API keys here. Project secrets belong in a dedicated encrypted vault.</p>
         <button disabled={saving === "project"} onClick={() => void createProject()} className="mt-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{saving === "project" ? "Assigning…" : "Assign project"}</button>
@@ -216,6 +222,7 @@ export default function DeveloperWorkspace({ admin = false, onLogout }: { admin?
           {visibleProjects.map(project => { const projectProgress = Number(project.progress ?? (project.status === "COMPLETED" ? 100 : 0)); return <button key={project.id} onClick={() => void selectProject(project)} className={`w-full rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md ${selected?.id === project.id ? "border-indigo-400 bg-indigo-50" : "border-slate-200"}`}><div className="flex items-start justify-between gap-3"><div><div className="font-semibold text-slate-900">{project.name}</div><div className="mt-1 text-xs text-slate-500">{project.client_name || "Internal project"} {project.developer_name ? `· ${project.developer_name}` : ""}</div></div><span className="rounded-full bg-indigo-100 px-2 py-1 text-[10px] font-bold text-indigo-700">{project.status.replace("_", " ")}</span></div><div className="mt-3 line-clamp-2 text-sm text-slate-600">{project.description || "No delivery brief added."}</div><div className="mt-3 flex items-center gap-3"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400" style={{ width: `${projectProgress}%` }}/></div><span className="text-xs font-semibold text-slate-600">{projectProgress}% done</span></div></button>; })}
         </div>
       </section>
+      {!admin && selected && <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="font-semibold text-slate-900">Update {selected.name}</div><div className="mt-1 text-xs text-slate-500">Choose status and record completed work for your Super Admin.</div></div><div className="flex rounded-xl bg-slate-100 p-1">{[["NEW","New"],["PENDING","Pending"],["IN_PROGRESS","Processing"],["COMPLETED","Completed"]].map(([value,label])=><button key={value} onClick={()=> void updateProjectStatus(value)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${selected.status===value?"bg-indigo-600 text-white":"text-slate-600 hover:bg-white"}`}>{label}</button>)}</div></div><div className="mt-5"><div className="mb-2 flex justify-between text-sm font-medium text-slate-700"><span>Work completed</span><span>{progress}%</span></div><input aria-label="Completion percentage" type="range" min="0" max="100" step="1" value={progress} onChange={e=>setProgress(Number(e.target.value))} className="w-full accent-indigo-600"/></div><textarea value={message} onChange={e=>setMessage(e.target.value)} placeholder="Optional progress note" className="mt-4 min-h-24 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-900 placeholder:text-slate-400"/><button disabled={saving==="update"} onClick={()=>void addUpdate()} className="mt-3 flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"><Send size={15}/>{saving==="update"?"Saving…":"Save progress update"}</button></section>}
     </div>
   </motion.div>;
 }
