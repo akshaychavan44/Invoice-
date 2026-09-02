@@ -109,6 +109,7 @@ export default function App() {
   const [showAiChat, setShowAiChat] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const followUpDateRef = useRef<HTMLInputElement>(null);
+  const addLeadDateRef = useRef<HTMLInputElement>(null);
   const quoteValidUntilRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
@@ -1096,7 +1097,7 @@ if (userRole === "SUB_ADMIN") {
               <div className={`p-3 rounded-xl border border-amber-500/30 ${isDark?"bg-amber-500/10":"bg-amber-50"}`}>
                 <div className="text-[11px] font-semibold text-amber-600 flex items-center gap-1"><Calendar size={12}/>Next Follow-up</div>
                 <div className="grid grid-cols-3 gap-2 mt-2">
-                  <input type="date" value={leadForm.nextFollowUp? new Date(leadForm.nextFollowUp).toISOString().split("T")[0] : ""} onChange={e=> setLeadForm({...leadForm, nextFollowUp:new Date(e.target.value).toISOString()})} className={`h-9 rounded-xl border px-2 text-[12px] ${inputCls}`}/>
+                  <div className="flex min-w-0 gap-1"><input ref={addLeadDateRef} type="date" value={leadForm.nextFollowUp? new Date(leadForm.nextFollowUp).toISOString().split("T")[0] : ""} onChange={e=> setLeadForm({...leadForm, nextFollowUp:new Date(e.target.value).toISOString()})} className={`min-w-0 flex-1 h-9 rounded-xl border px-2 text-[12px] ${inputCls}`}/><button type="button" aria-label="Open lead due date calendar" onClick={() => { const picker = addLeadDateRef.current as (HTMLInputElement & { showPicker?: () => void }) | null; try { picker?.showPicker?.(); } catch {} picker?.focus(); }} className={`h-9 w-9 shrink-0 rounded-xl border flex items-center justify-center ${bgCard}`}><Calendar size={14}/></button></div>
                   <select value={leadForm.followUpType} onChange={e=> setLeadForm({...leadForm, followUpType:e.target.value as any})} className={`h-9 rounded-xl border px-2 text-[12px] ${inputCls}`}><option>Phone Call</option><option>WhatsApp</option><option>Email</option><option>Meeting</option><option>Site Visit</option></select>
                   <div className={`h-9 rounded-xl border flex items-center px-2 text-[11px] ${inputCls}`}><Clock size={12} className="mr-1"/>10:00 AM</div>
                 </div>

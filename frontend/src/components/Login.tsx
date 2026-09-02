@@ -1,22 +1,15 @@
 import React, { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, BarChart3, CheckCircle2, Eye, EyeOff, LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, BarChart3, Eye, EyeOff, ShieldCheck, Sparkles } from "lucide-react";
 import { apiUrl, AuthUser } from "../lib/api";
 
 interface LoginProps { onLoginSuccess: (token: string, user: AuthUser) => void; }
-const roles = [
-  ["Super Admin", "admin@erp.com", "Full business intelligence"],
-  ["Sub Admin", "subadmin@erp.com", "Daily operations workspace"],
-  ["Sales", "sales@erp.com", "Focused CRM workspace"],
-] as const;
-
 export default function Login({ onLoginSuccess }: LoginProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const selectRole = (accountEmail: string) => { setEmail(accountEmail); setPassword("ChangeMe123!"); setError(""); };
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault(); setError(""); setLoading(true);
     try {
@@ -38,7 +31,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         <motion.section initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .55, delay: .08, ease: "easeOut" }} className="mx-auto w-full max-w-[470px]">
           <div className="login-panel rounded-[28px] p-6 shadow-2xl shadow-black/30 sm:p-8"><div className="mb-8 flex items-start justify-between"><div><div className="mb-2 flex lg:hidden items-center gap-2"><div className="brand-mark brand-mark-sm">Z</div><span className="font-bold">ZootechX.ai</span></div><h2 className="text-2xl font-semibold tracking-tight text-slate-950">Welcome back</h2><p className="mt-1.5 text-sm text-slate-500">Sign in to your secure workspace.</p></div><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600"><ShieldCheck size={20}/></div></div>
             <form onSubmit={handleLogin} className="space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-slate-500">Work email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" className="login-input" required /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-slate-500">Password</span><span className="relative block"><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter your password" className="login-input pr-12" required /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600">{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button></span></label><AnimatePresence>{error && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-600">{error}</motion.div>}</AnimatePresence><button type="submit" disabled={loading} className="login-submit">{loading ? "Signing you in…" : <><span>Enter workspace</span><ArrowRight size={17}/></>}</button></form>
-            <div className="my-7 flex items-center gap-3"><div className="h-px flex-1 bg-slate-200"/><span className="text-[10px] font-semibold uppercase tracking-[.16em] text-slate-400">Development access</span><div className="h-px flex-1 bg-slate-200"/></div><div className="grid gap-2">{roles.map(([role, accountEmail, detail]) => <button key={accountEmail} type="button" onClick={() => selectRole(accountEmail)} className="login-role"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><LockKeyhole size={14}/></span><span className="min-w-0 flex-1 text-left"><span className="block text-sm font-semibold text-slate-800">{role}</span><span className="block truncate text-xs text-slate-500">{detail}</span></span><span className="text-xs font-semibold text-indigo-600">Use</span></button>)}</div><p className="mt-5 text-center text-xs text-slate-500">Developers sign in above with the email and temporary password supplied by their Super Admin.</p><div className="mt-4 flex items-center gap-2 text-xs text-slate-400"><CheckCircle2 size={14} className="text-emerald-500"/> Demo password: <span className="font-medium text-slate-600">ChangeMe123!</span></div></div>
+          </div>
           <p className="mt-5 text-center text-xs text-slate-500">Protected with role-based permissions · ZootechX.ai © 2026</p>
         </motion.section>
       </div>
