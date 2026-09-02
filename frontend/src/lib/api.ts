@@ -1,4 +1,11 @@
-export const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000").replace(/\/$/, "");
+const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL;
+const isDeployedBrowser = typeof window !== "undefined" && window.location.hostname !== "localhost";
+const pointsToLocalApi = !configuredApiUrl || /^https?:\/\/localhost(?::\d+)?\/?$/i.test(configuredApiUrl);
+
+// Local development keeps using localhost. Production always uses the same
+// Vercel domain's /api rewrite, so an untracked local .env.local can never be
+// baked into a deployed frontend by mistake.
+export const apiUrl = (isDeployedBrowser && pointsToLocalApi ? "/api" : (configuredApiUrl ?? "http://localhost:5000")).replace(/\/$/, "");
 
 export type AuthUser = {
   id: string;
