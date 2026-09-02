@@ -10,6 +10,9 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault(); setError(""); setLoading(true);
     try {
@@ -17,6 +20,20 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       const data = await response.json();
       if (!response.ok) { setError(data.message || "Invalid email or password"); return; }
       localStorage.setItem("zootechx_token", data.token); localStorage.setItem("zootechx_user", JSON.stringify(data.user)); onLoginSuccess(data.token, data.user);
+    } catch { setError("Unable to connect to the server"); } finally { setLoading(false); }
+  };
+  const handlePasswordChange = async (event: React.FormEvent) => {
+    event.preventDefault(); setError("");
+    if (newPassword !== confirmPassword) { setError("New password and confirmation do not match."); return; }
+    setLoading(true);
+    try {
+      const loginResponse = await fetch(`${apiUrl}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+      const loginData = await loginResponse.json();
+      if (!loginResponse.ok) { setError(loginData.message || "Your current password is incorrect."); return; }
+      const response = await fetch(`${apiUrl}/api/auth/change-password`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${loginData.token}` }, body: JSON.stringify({ currentPassword: password, newPassword }) });
+      const data = await response.json();
+      if (!response.ok) { setError(data.message || "Unable to change password."); return; }
+      setPassword(""); setNewPassword(""); setConfirmPassword(""); setChangingPassword(false); setError("Password changed. Sign in with your new password.");
     } catch { setError("Unable to connect to the server"); } finally { setLoading(false); }
   };
   return (
@@ -30,7 +47,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         </motion.section>
         <motion.section initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .55, delay: .08, ease: "easeOut" }} className="mx-auto w-full max-w-[470px]">
           <div className="login-panel rounded-[28px] p-6 shadow-2xl shadow-black/30 sm:p-8"><div className="mb-8 flex items-start justify-between"><div><div className="mb-2 flex lg:hidden items-center gap-2"><div className="brand-mark brand-mark-sm">Z</div><span className="font-bold">ZootechX.ai</span></div><h2 className="text-2xl font-semibold tracking-tight text-slate-950">Welcome back</h2><p className="mt-1.5 text-sm text-slate-500">Sign in to your secure workspace.</p></div><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600"><ShieldCheck size={20}/></div></div>
-            <form onSubmit={handleLogin} className="space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-slate-500">Work email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" className="login-input" required /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-slate-500">Password</span><span className="relative block"><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter your password" className="login-input pr-12" required /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600">{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button></span></label><AnimatePresence>{error && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-600">{error}</motion.div>}</AnimatePresence><button type="submit" disabled={loading} className="login-submit">{loading ? "Signing you in…" : <><span>Enter workspace</span><ArrowRight size={17}/></>}</button></form>
+            <form onSubmit={changingPassword ? handlePasswordChange : handleLogin} className="space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-slate-500">Work email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" className="login-input" required /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-slate-500">Current password</span><span className="relative block"><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter your current password" className="login-input pr-12" required /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600">{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button></span></label>{changingPassword && <><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-slate-500">New password</span><input required minLength={8} type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} placeholder="Minimum 8 characters" className="login-input"/></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-slate-500">Confirm new password</span><input required minLength={8} type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} placeholder="Repeat your new password" className="login-input"/></label></>}<AnimatePresence>{error && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className={`rounded-xl border px-3 py-2.5 text-sm ${error.startsWith("Password changed") ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-600"}`}>{error}</motion.div>}</AnimatePresence><button type="submit" disabled={loading} className="login-submit">{loading ? "Please wait…" : changingPassword ? "Save new password" : <><span>Enter workspace</span><ArrowRight size={17}/></>}</button><button type="button" onClick={() => { setChangingPassword(!changingPassword); setError(""); }} className="w-full text-center text-sm font-medium text-indigo-600 hover:text-indigo-700">{changingPassword ? "Back to sign in" : "Change password"}</button></form>
           </div>
           <p className="mt-5 text-center text-xs text-slate-500">Protected with role-based permissions · ZootechX.ai © 2026</p>
         </motion.section>
