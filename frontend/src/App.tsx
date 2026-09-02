@@ -235,7 +235,8 @@ useEffect(()=>{ localStorage.setItem("zootechx_theme", isDark?"dark":"light"); }
   const markAllNotificationsRead = async () => { const response = await apiFetch("/api/notifications/read-all", { method:"POST" }); if (response.ok) setNotifications(current => current.map(notification => ({ ...notification, unread:false }))); };
   const clearReadNotifications = async () => { const response = await apiFetch("/api/notifications/clear-read", { method:"POST" }); if (response.ok) setNotifications(current => current.filter(notification => notification.unread)); };
 
-  // Converted records belong in Clients, so keep the Leads workspace focused on active prospects.
+  // Converted records belong in Clients, so all lead counters use active leads.
+  const activeLeads = useMemo(() => leads.filter(lead => lead.status !== "Converted"), [leads]);
   const visibleLeads = useMemo(() => filteredLeads.filter(lead => lead.status !== "Converted"), [filteredLeads]);
 
   const kpis = useMemo(()=> {
@@ -565,7 +566,7 @@ if (userRole === "SUB_ADMIN") {
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {[
             { id:"dashboard", label:"Dashboard", icon:LayoutDashboard },
-            { id:"leads", label:"Leads", icon:UserPlus, badge:leads.length },
+            { id:"leads", label:"Leads", icon:UserPlus, badge:activeLeads.length },
             { id:"followups", label:"Follow-ups", icon:BellRing, badge:overdueFollow, badgeColor:"bg-red-500" },
             { id:"invoices", label:"Invoices", icon:FileText },
             { id:"invoices/new", label:"Create Invoice", icon:Plus, isNew:true },
@@ -760,7 +761,7 @@ if (userRole === "SUB_ADMIN") {
 
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
-                  { label:"Total Leads", value:leads.length },
+                  { label:"Total Leads", value:activeLeads.length },
                   { label:"New Leads", value:leads.filter(l=> l.status==="New").length },
                   { label:"Follow-ups Today", value:todayFollowUps.length },
                   { label:"Converted", value:leads.filter(l=> l.status==="Converted").length },
