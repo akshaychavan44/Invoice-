@@ -3,12 +3,16 @@
   "services": {
     "frontend": {
       "root": "frontend",
-      "framework": "nextjs"
+      "framework": "nextjs",
+      "installCommand": "npm ci",
+      "buildCommand": "npm run build"
     },
     "backend": {
       "root": "backend",
       "framework": "express",
-      "entrypoint": "api/index.ts"
+      "entrypoint": "api/index.ts",
+      "installCommand": "npm ci",
+      "buildCommand": "npm run build"
     }
   },
   "rewrites": [
