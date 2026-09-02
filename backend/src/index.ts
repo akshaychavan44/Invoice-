@@ -23,6 +23,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "1mb" })); app.use(rateLimit({ windowMs: 900_000, limit: 5_000, standardHeaders: "draft-7" }));
 const login = z.object({ email: z.string().email(), password: z.string().min(8) });
+const changePasswordInput = z.object({ currentPassword: z.string().min(8), newPassword: z.string().min(8).max(128) });
 const leadInput = z.object({ fullName: z.string().min(2), company: z.string().max(160).optional(), email: z.string().email().optional(), phone: z.string().max(30).optional(), source: z.string().min(2), notes: z.string().optional(), status: z.enum(["NEW", "CONTACTED", "FOLLOW_UP", "INTERESTED", "QUOTATION_SENT", "NEGOTIATION", "CONVERTED", "LOST"]).optional() });
 const leadStatus = z.enum(["NEW", "CONTACTED", "FOLLOW_UP", "INTERESTED", "QUOTATION_SENT", "NEGOTIATION", "CONVERTED", "LOST"]);
 const leadUpdateInput = z.object({ fullName: z.string().min(2).optional(), company: z.string().max(160).nullable().optional(), email: z.string().email().nullable().optional(), phone: z.string().max(30).nullable().optional(), source: z.string().min(2).optional(), notes: z.string().nullable().optional(), status: leadStatus.optional() }).refine(data => Object.keys(data).length > 0, { message: "At least one lead field is required" });
@@ -57,6 +58,22 @@ app.post("/api/auth/login", async (request: Request, response: Response) => {
     const user = findDemoUser(parsed.data.email.toLowerCase());
     if (!user || !isDemoPassword(parsed.data.password)) { response.status(503).json({ message: "The database is unavailable and this account cannot use offline access." }); return; }
     response.json({ token: signToken(user.id, user.role), user, offline: true });
+  }
+});
+app.post("/api/auth/change-password", requireAuth, async (request: AuthRequest, response: Response) => {
+  const parsed = changePasswordInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Current and new passwords must be at least 8 characters." }); return; }
+  if (parsed.data.currentPassword === parsed.data.newPassword) { response.status(400).json({ message: "Your new password must be different from your current password." }); return; }
+  try {
+    const users = await sql`SELECT id, password_hash FROM users WHERE id = ${request.user!.id} LIMIT 1`;
+    const user = users[0] as { id: string; password_hash: string } | undefined;
+    if (!user) { response.status(404).json({ message: "Account not found." }); return; }
+    if (!(await bcrypt.compare(parsed.data.currentPassword, user.password_hash))) { response.status(401).json({ message: "Your current password is incorrect." }); return; }
+    const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
+    await sql`UPDATE users SET password_hash = ${passwordHash}, must_change_password = false, updated_at = now() WHERE id = ${request.user!.id}`;
+    response.json({ message: "Password changed successfully." });
+  } catch {
+    response.status(503).json({ message: "Unable to change password right now." });
   }
 });
 app.get("/api/auth/me", requireAuth, async (request: AuthRequest, response) => {

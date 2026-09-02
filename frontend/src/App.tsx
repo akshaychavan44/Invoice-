@@ -2,6 +2,7 @@ import Login from "./components/Login";
 import SalesDashboard from "./components/SalesDashboard";
 import SubAdminDashboard from "./components/SubAdminDashboard";
 import DeveloperWorkspace from "./components/DeveloperWorkspace";
+import ChangePasswordControl from "./components/ChangePasswordControl";
 import { ClientsPage, CreateInvoicePage, DashboardPage, ExpensesPage, FollowUpsPage, InvoicesPage, LeadsPage, PaymentsPage, QuotationsPage, SettingsPage } from "./components/pages/CrmPages";
 import "./app.css";
 import { apiFetch, AuthUser } from "./lib/api";
@@ -533,16 +534,14 @@ if (!isLoggedIn) {
   );
 }
 if (userRole === "SALES") {
-  return <SalesDashboard onLogout={logout} />;
+  return <><SalesDashboard onLogout={logout} /><ChangePasswordControl /></>;
 }
 if (userRole === "DEVELOPER") {
-  return <DeveloperWorkspace onLogout={logout} />;
+  return <><DeveloperWorkspace onLogout={logout} /><ChangePasswordControl /></>;
 }
 if (userRole === "SUB_ADMIN") {
   return (
-    <SubAdminDashboard
-      onLogout={logout}
-    />
+    <><SubAdminDashboard onLogout={logout} /><ChangePasswordControl /></>
   );
 }
   return (
@@ -1199,6 +1198,7 @@ if (userRole === "SUB_ADMIN") {
       {/* Click outside handlers */}
       {newDropdownOpen && <div className="fixed inset-0 z-10" onClick={()=> setNewDropdownOpen(false)}/>}
       {notifOpen && <div className="fixed inset-0 z-10" onClick={()=> setNotifOpen(false)}/>}
+      <ChangePasswordControl />
     </motion.div>
   );
 }
