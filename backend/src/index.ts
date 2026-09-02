@@ -203,4 +203,10 @@ app.use((error: Error, _request: Request, response: Response, _next: express.Nex
   const databaseUnavailable = error.message.includes("Error connecting to database") || error.message.includes("fetch failed");
   response.status(databaseUnavailable ? 503 : 500).json({ message: databaseUnavailable ? "The backend cannot reach Neon. Start it from a regular Windows PowerShell terminal, then try again." : "Something went wrong" });
 });
-app.listen(Number(process.env.PORT ?? 5000), () => console.log("ZootechX Neon API listening on port 5000"));
+export default app;
+
+// Vercel invokes the exported Express application. Keep the listener only for
+// the existing local development and standalone backend workflow.
+if (!process.env.VERCEL) {
+  app.listen(Number(process.env.PORT ?? 5000), () => console.log("ZootechX Neon API listening on port 5000"));
+}
