@@ -167,7 +167,7 @@ export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: 
   const completedProjects = projects.filter(project => project.status === "COMPLETED").length;
   const averageProgress = projects.length ? Math.round(projects.reduce((total, project) => total + Number(project.progress ?? (project.status === "COMPLETED" ? 100 : 0)), 0) / projects.length) : 0;
 
-  return <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: "easeOut" }} className="developer-workspace mx-auto max-w-7xl space-y-6 p-4 lg:p-6">
+  return <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: "easeOut" }} className={`developer-workspace ${onBack ? "developer-workspace--standalone" : ""} mx-auto max-w-7xl space-y-6 p-4 lg:p-6`}>
     <div className="developer-workspace__hero relative overflow-hidden rounded-3xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950 via-[#121936] to-cyan-950 p-6 text-white shadow-xl lg:p-8">
       <div className="developer-workspace__orb developer-workspace__orb--one"/><div className="developer-workspace__orb developer-workspace__orb--two"/>
       <div className="flex flex-wrap items-center justify-between gap-4">

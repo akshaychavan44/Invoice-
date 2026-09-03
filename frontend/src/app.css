@@ -124,6 +124,7 @@ body { min-height: 100dvh; margin: 0; overflow-x: hidden; background: #1d2028; }
   isolation: isolate;
   background: radial-gradient(circle at 92% 2%, rgba(99, 102, 241, .10), transparent 26%);
 }
+.developer-workspace--standalone { min-height:100dvh; background-color:#f8fafc; box-shadow:0 0 0 100vmax #f8fafc; clip-path:inset(0 -100vmax); }
 .developer-workspace__hero { box-shadow: 0 22px 55px rgba(30, 41, 110, .26), inset 0 1px 0 rgba(255,255,255,.10); }
 .developer-workspace__orb { position: absolute; pointer-events: none; border-radius: 999px; filter: blur(2px); opacity: .6; }
 .developer-workspace__orb--one { width: 19rem; height: 19rem; right: -7rem; top: -10rem; background: radial-gradient(circle, rgba(34,211,238,.25), transparent 68%); animation: developer-orbit 13s ease-in-out infinite; }
