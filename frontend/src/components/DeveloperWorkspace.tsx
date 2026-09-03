@@ -8,7 +8,7 @@ type Developer = { id: string; name: string; email: string; assigned_projects?: 
 type Project = { id: string; name: string; client_name: string | null; description: string | null; status: string; priority: string; due_date: string | null; progress?: number | string; assigned_developer_id: string; developer_name?: string };
 type Update = { id: string; message: string; progress: number; author_name?: string; created_at: string };
 
-export default function DeveloperWorkspace({ admin = false, onLogout }: { admin?: boolean; onLogout?: () => void }) {
+export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: { admin?: boolean; onLogout?: () => void; onBack?: () => void }) {
   const [developers, setDevelopers] = useState<Developer[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeDeveloperId, setActiveDeveloperId] = useState<string | null>(null);
@@ -179,6 +179,7 @@ export default function DeveloperWorkspace({ admin = false, onLogout }: { admin?
         <div className="relative z-10 flex items-center gap-3">
           <div className="developer-workspace__hero-stat rounded-2xl bg-white/10 px-4 py-3 text-center"><div className="text-xl font-semibold">{projects.length}</div><div className="text-xs text-slate-300">{admin ? "projects" : "assigned"}</div></div>
           {admin && <div className="developer-workspace__hero-stat rounded-2xl bg-white/10 px-4 py-3 text-center"><div className="text-xl font-semibold">{developers.length}</div><div className="text-xs text-slate-300">developers</div></div>}
+          {onBack && <button onClick={onBack} className="rounded-xl border border-white/20 px-3 py-2.5 text-sm font-semibold transition hover:bg-white/10">Back</button>}
           <button aria-label="Refresh workspace" onClick={() => void load()} className="developer-workspace__icon-button rounded-xl bg-white/10 p-3 transition hover:bg-white/20" title="Refresh workspace"><RefreshCw size={17} className={loading ? "animate-spin" : ""}/></button>
           {onLogout && <button onClick={() => setShowSettings(current => !current)} className="flex items-center gap-2 rounded-xl border border-white/20 px-3 py-2.5 text-sm font-semibold transition hover:bg-white/10"><Settings size={15}/>Settings</button>}
         </div>
