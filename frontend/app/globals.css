@@ -13,13 +13,13 @@ html, body {
 }
 
 html.dark, html.dark body {
-  background: #070a13;
-  color: #f8fafc;
+  background: #0c1017;
+  color: #f1f5f9;
 }
 
 html:not(.dark), html:not(.dark) body {
-  background: #f8fafc;
-  color: #0f172a;
+  background: #fbf8f2;
+  color: #1c1917;
 }
 
 #__next {

@@ -10,6 +10,7 @@ import { apiFetch } from "../lib/api";
 interface SalesDashboardProps {
   onLogout: () => void;
   dark?: boolean;
+  onToggleTheme?: () => void;
 }
 
 type Lead = {
@@ -46,30 +47,35 @@ type Client = {
   gst_number: string | null;
 };
 
-export default function SalesDashboard({ onLogout, dark: propDark }: SalesDashboardProps) {
+export default function SalesDashboard({ onLogout, dark: propDark = true, onToggleTheme }: SalesDashboardProps) {
   const [page, setPage] = useState<"leads" | "followups" | "clients">("leads");
-  const [internalDark, setInternalDark] = useState<boolean>(() => {
+  const [dark, setDark] = useState<boolean>(() => {
+    if (propDark !== undefined) return propDark;
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("zootechx_theme");
-      if (saved) return saved === "dark";
+      return document.documentElement.classList.contains("dark");
     }
     return true;
   });
-  const dark = propDark !== undefined ? propDark : internalDark;
-  const setDark = (val: boolean | ((prev: boolean) => boolean)) => {
-    const nextVal = typeof val === "function" ? val(dark) : val;
-    setInternalDark(nextVal);
+
+  useEffect(() => {
+    if (propDark !== undefined) {
+      setDark(propDark);
+    }
+  }, [propDark]);
+
+  const handleToggleTheme = () => {
+    if (onToggleTheme) {
+      onToggleTheme();
+      return;
+    }
+    const next = !dark;
+    setDark(next);
     if (typeof window !== "undefined") {
-      localStorage.setItem("zootechx_theme", nextVal ? "dark" : "light");
-      if (nextVal) {
-        document.documentElement.classList.add("dark");
-        document.documentElement.classList.remove("light");
-      } else {
-        document.documentElement.classList.remove("dark");
-        document.documentElement.classList.add("light");
-      }
+      document.documentElement.classList.toggle("dark", next);
+      document.documentElement.classList.toggle("light", !next);
     }
   };
+
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("ALL");
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -139,12 +145,12 @@ export default function SalesDashboard({ onLogout, dark: propDark }: SalesDashbo
     );
   }, [clients, query]);
 
-  // Design Tokens
-  const bgMain = dark ? "bg-[#090d16] text-[#f1f5f9]" : "bg-slate-50 text-slate-900";
-  const bgSidebar = dark ? "bg-[#101422] border-white/10" : "bg-white border-slate-200";
-  const bgCard = dark ? "bg-[#141828]/90 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900";
-  const inputBg = dark ? "bg-[#1c2236] border-white/10 text-white placeholder-slate-400" : "bg-white border-slate-200 text-slate-900 placeholder-slate-400";
-  const mutedText = dark ? "text-slate-400" : "text-slate-500";
+  // Design Tokens (Nocturne & Ivory Luxury Palette)
+  const bgMain = dark ? "bg-[#0c1017] text-[#f1f5f9]" : "bg-[#fbf8f2] text-[#1c1917]";
+  const bgSidebar = dark ? "bg-[#0f1420] border-[#1b2438]" : "bg-[#f8f4ec] border-[#ede5d8]";
+  const bgCard = dark ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9]" : "bg-white border-[#eee6da] text-[#1c1917] shadow-[0_4px_20px_-2px_rgba(180,155,120,0.08)]";
+  const inputBg = dark ? "bg-[#171f30] border-[#222d42] text-[#f1f5f9] placeholder-[#5a687d]" : "bg-[#fcfaf7] border-[#e5dcd0] text-[#1c1917] placeholder-[#a8a199]";
+  const mutedText = dark ? "text-[#8e9bb0]" : "text-[#78716c]";
 
   type SalesMenuItem = {
     id: "leads" | "followups" | "clients";
@@ -165,15 +171,19 @@ export default function SalesDashboard({ onLogout, dark: propDark }: SalesDashbo
       <aside className={`w-[260px] shrink-0 hidden md:flex flex-col border-r ${bgSidebar} h-screen z-20`}>
         {/* Brand Header */}
         <div className="p-5 border-b border-inherit flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-cyan-400 via-indigo-600 to-violet-600 flex items-center justify-center text-white font-bold text-base shadow-lg shadow-cyan-500/20">
+          <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-base border ${
+            dark 
+              ? "bg-[#171f30] border-[#222d42] text-[#cca45f] shadow-[0_0_15px_rgba(204,164,95,0.15)]" 
+              : "bg-white border-[#eee6da] text-[#a07432] shadow-sm"
+          }`}>
             Z
           </div>
           <div>
             <div className="font-bold text-[14px] leading-tight flex items-center gap-1.5">
-              ZootechX.ai
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              ZootechX<span className={dark ? "text-[#cca45f]" : "text-[#a07432]"}>.ai</span>
+              <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${dark ? "bg-[#cca45f]" : "bg-[#a07432]"}`} />
             </div>
-            <div className="text-[11px] text-cyan-400 font-mono font-medium">Sales Command</div>
+            <div className={`text-[10px] font-mono uppercase tracking-widest font-semibold ${dark ? "text-[#cca45f]" : "text-[#a07432]"}`}>Sales Command</div>
           </div>
         </div>
 
@@ -190,17 +200,17 @@ export default function SalesDashboard({ onLogout, dark: propDark }: SalesDashbo
                 }}
                 className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-[13px] font-medium transition-all ${
                   active
-                    ? (dark ? "bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 text-white shadow-lg shadow-indigo-600/20" : "bg-slate-900 text-white shadow")
-                    : `${mutedText} ${dark ? "hover:bg-white/5 hover:text-white" : "hover:bg-slate-100 hover:text-slate-900"}`
+                    ? (dark ? "bg-[#171f30] text-[#cca45f] border border-[#cca45f]/30 shadow-md font-semibold" : "bg-white text-[#a07432] border border-[#eee6da] shadow-sm font-semibold")
+                    : `${mutedText} ${dark ? "hover:bg-[#121826] hover:text-[#f1f5f9]" : "hover:bg-[#f4eee4] hover:text-[#1c1917]"}`
                 }`}
               >
-                <item.icon size={18} className={active ? "text-white" : (dark ? "text-slate-400" : "text-slate-500")} />
+                <item.icon size={18} className={active ? (dark ? "text-[#cca45f]" : "text-[#a07432]") : (dark ? "text-slate-400" : "text-slate-500")} />
                 <span className="flex-1 text-left">{item.label}</span>
                 {item.badge !== undefined && (
                   <span
                     className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
                       active
-                        ? "bg-white/20 text-white"
+                        ? (dark ? "bg-[#cca45f]/20 text-[#cca45f]" : "bg-[#f5eddf] text-[#a07432]")
                         : (dark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-700")
                     }`}
                   >
@@ -252,6 +262,28 @@ export default function SalesDashboard({ onLogout, dark: propDark }: SalesDashbo
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Nocturne & Ivory Theme Toggle Button */}
+            <button
+              onClick={handleToggleTheme}
+              title={dark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
+              aria-label={dark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
+              className={`flex items-center gap-2.5 px-3 py-1.5 rounded-full border transition-all ${
+                dark 
+                  ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9] hover:border-[#cca45f]/40 shadow-sm" 
+                  : "bg-white border-[#eee6da] text-[#1c1917] hover:border-[#a07432]/40 shadow-sm"
+              }`}
+            >
+              <span className="text-[10px] font-bold tracking-widest uppercase font-mono">
+                {dark ? "NOCTURNE" : "IVORY"}
+              </span>
+              <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${
+                dark ? "bg-[#090d16] justify-end" : "bg-[#ede5d8] justify-start"
+              }`}>
+                <div className={`w-3 h-3 rounded-full shadow transition-transform ${
+                  dark ? "bg-[#cca45f]" : "bg-[#b88a44]"
+                }`} />
+              </div>
+            </button>
             {/* Mobile buttons */}
             <div className="flex md:hidden items-center gap-1">
               {menu.map((it) => (

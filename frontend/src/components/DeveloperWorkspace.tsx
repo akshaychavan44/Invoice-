@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Code2, FolderKanban, Users, Plus, RefreshCw,
+  Code2, FolderKanban, Users, Plus, KeyRound, RefreshCw,
   Send, Trash2, CalendarDays, ExternalLink, ShieldCheck, CheckCircle2,
   Clock, AlertCircle, ChevronRight, X, ArrowLeft, ArrowUpRight, LogOut, Sun, Moon
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import CredentialsVault from "./CredentialsVault";
 
 type Developer = {
   id: string;
@@ -52,7 +53,7 @@ export default function DeveloperWorkspace({
   dark?: boolean;
   onToggleTheme?: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"projects" | "team" | "assign">("projects");
+  const [activeTab, setActiveTab] = useState<"projects" | "team" | "assign" | "vault">("projects");
   const [developers, setDevelopers] = useState<Developer[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeDeveloperId, setActiveDeveloperId] = useState<string | null>(null);
@@ -303,15 +304,15 @@ export default function DeveloperWorkspace({
       )
     : 0;
 
-  // Colors
-  const bgMain = dark ? "bg-[#090d16] text-[#f1f5f9]" : "bg-slate-50 text-slate-900";
-  const bgSidebar = dark ? "bg-[#101422] border-white/10" : "bg-white border-slate-200";
-  const bgCard = dark ? "bg-[#141828]/90 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900";
-  const inputBg = dark ? "bg-[#1c2236] border-white/10 text-white placeholder-slate-400" : "bg-white border-slate-200 text-slate-900 placeholder-slate-400";
-  const mutedText = dark ? "text-slate-400" : "text-slate-500";
+  // Colors (Nocturne & Ivory Luxury Palette)
+  const bgMain = dark ? "bg-[#0c1017] text-[#f1f5f9]" : "bg-[#fbf8f2] text-[#1c1917]";
+  const bgSidebar = dark ? "bg-[#0f1420] border-[#1b2438]" : "bg-[#f8f4ec] border-[#ede5d8]";
+  const bgCard = dark ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9]" : "bg-white border-[#eee6da] text-[#1c1917] shadow-[0_4px_20px_-2px_rgba(180,155,120,0.08)]";
+  const inputBg = dark ? "bg-[#171f30] border-[#222d42] text-[#f1f5f9] placeholder-[#5a687d]" : "bg-[#fcfaf7] border-[#e5dcd0] text-[#1c1917] placeholder-[#a8a199]";
+  const mutedText = dark ? "text-[#8e9bb0]" : "text-[#78716c]";
 
   type NavItem = {
-    id: "projects" | "team" | "assign";
+    id: "projects" | "team" | "assign" | "vault";
     label: string;
     icon: React.ComponentType<any>;
     badge?: number;
@@ -321,6 +322,7 @@ export default function DeveloperWorkspace({
     { id: "projects", label: admin ? "All Projects" : "My Projects", icon: FolderKanban, badge: projects.length },
     ...(admin ? [{ id: "team", label: "Team Members", icon: Users, badge: developers.length } as NavItem] : []),
     ...(admin ? [{ id: "assign", label: "Assign Project", icon: Plus } as NavItem] : []),
+    { id: "vault", label: "Credentials & API Vault", icon: KeyRound },
   ];
 
   return (
@@ -330,15 +332,19 @@ export default function DeveloperWorkspace({
         {/* Brand Header */}
         <div className="p-5 border-b border-inherit flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-600 via-violet-600 to-cyan-500 flex items-center justify-center text-white font-bold text-base shadow-lg shadow-indigo-500/25">
+            <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-base border ${
+              dark 
+                ? "bg-[#171f30] border-[#222d42] text-[#cca45f] shadow-[0_0_15px_rgba(204,164,95,0.15)]" 
+                : "bg-white border-[#eee6da] text-[#a07432] shadow-sm"
+            }`}>
               Z
             </div>
             <div>
               <div className="font-bold text-[14px] leading-tight flex items-center gap-1.5">
-                ZootechX.ai
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                ZootechX<span className={dark ? "text-[#cca45f]" : "text-[#a07432]"}>.ai</span>
+                <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${dark ? "bg-[#cca45f]" : "bg-[#a07432]"}`} />
               </div>
-              <div className="text-[11px] text-indigo-400 font-mono font-medium">
+              <div className={`text-[10px] font-mono uppercase tracking-widest font-semibold ${dark ? "text-[#cca45f]" : "text-[#a07432]"}`}>
                 {admin ? "Engineering Hub" : "Developer Workspace"}
               </div>
             </div>
@@ -367,17 +373,17 @@ export default function DeveloperWorkspace({
                 }}
                 className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-[13px] font-medium transition-all ${
                   active
-                    ? (dark ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/20" : "bg-slate-900 text-white shadow")
-                    : `${mutedText} ${dark ? "hover:bg-white/5 hover:text-white" : "hover:bg-slate-100 hover:text-slate-900"}`
+                    ? (dark ? "bg-[#171f30] text-[#cca45f] border border-[#cca45f]/30 shadow-md font-semibold" : "bg-white text-[#a07432] border border-[#eee6da] shadow-sm font-semibold")
+                    : `${mutedText} ${dark ? "hover:bg-[#121826] hover:text-[#f1f5f9]" : "hover:bg-[#f4eee4] hover:text-[#1c1917]"}`
                 }`}
               >
-                <item.icon size={18} className={active ? "text-white" : (dark ? "text-slate-400" : "text-slate-500")} />
+                <item.icon size={18} className={active ? (dark ? "text-[#cca45f]" : "text-[#a07432]") : (dark ? "text-slate-400" : "text-slate-500")} />
                 <span className="flex-1 text-left">{item.label}</span>
                 {item.badge !== undefined && (
                   <span
                     className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
                       active
-                        ? "bg-white/20 text-white"
+                        ? (dark ? "bg-[#cca45f]/20 text-[#cca45f]" : "bg-[#f5eddf] text-[#a07432]")
                         : (dark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-700")
                     }`}
                   >
@@ -421,7 +427,9 @@ export default function DeveloperWorkspace({
                 ? "Projects & Tasks"
                 : activeTab === "team"
                 ? "Team Developers"
-                : "Assign Project"}
+                : activeTab === "assign"
+                ? "Assign Project"
+                : "Credentials & Secret Vault"}
             </h2>
             <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 text-[10px] font-bold text-indigo-400">
               {admin ? "Super Admin Access" : "Developer Role"}
@@ -429,15 +437,27 @@ export default function DeveloperWorkspace({
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Nocturne & Ivory Theme Toggle Button */}
             <button
               onClick={handleToggleTheme}
-              title={dark ? "Switch to light theme" : "Switch to dark theme"}
-              aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
-              className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
-                dark ? "border-white/10 text-amber-400 hover:bg-white/10" : "border-slate-200 text-indigo-600 hover:bg-slate-50"
+              title={dark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
+              aria-label={dark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
+              className={`flex items-center gap-2.5 px-3 py-1.5 rounded-full border transition-all ${
+                dark 
+                  ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9] hover:border-[#cca45f]/40 shadow-sm" 
+                  : "bg-white border-[#eee6da] text-[#1c1917] hover:border-[#a07432]/40 shadow-sm"
               }`}
             >
-              {dark ? <Sun size={15} /> : <Moon size={15} />}
+              <span className="text-[10px] font-bold tracking-widest uppercase font-mono">
+                {dark ? "NOCTURNE" : "IVORY"}
+              </span>
+              <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${
+                dark ? "bg-[#090d16] justify-end" : "bg-[#ede5d8] justify-start"
+              }`}>
+                <div className={`w-3 h-3 rounded-full shadow transition-transform ${
+                  dark ? "bg-[#cca45f]" : "bg-[#b88a44]"
+                }`} />
+              </div>
             </button>
 
             <button
@@ -1059,6 +1079,13 @@ export default function DeveloperWorkspace({
                   </button>
                 </form>
               </div>
+            </div>
+          )}
+
+          {/* TAB 4: CREDENTIALS VAULT */}
+          {activeTab === "vault" && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <CredentialsVault dark={dark} />
             </div>
           )}
         </main>

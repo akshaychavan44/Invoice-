@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText, CreditCard, Calculator, Users,
-  BellRing, Briefcase, Plus, RefreshCw,
+  BellRing, Briefcase, KeyRound, Plus, RefreshCw,
   Search, ShieldCheck, Sun, Moon, LogOut, CheckCircle2, AlertCircle, X
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import DeveloperWorkspace from "./DeveloperWorkspace";
+import CredentialsVault from "./CredentialsVault";
 
 interface SubAdminDashboardProps {
   onLogout: () => void;
@@ -22,7 +23,7 @@ type Lead = { id: string; full_name: string; company: string | null; email: stri
 type Followup = { id: string; lead_name: string; type: string; followup_date: string; followup_time: string | null; status: string };
 
 export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTheme }: SubAdminDashboardProps) {
-  const [page, setPage] = useState<"invoices" | "expenses" | "leads" | "clients" | "developers">("invoices");
+  const [page, setPage] = useState<"invoices" | "expenses" | "leads" | "clients" | "developers" | "vault">("invoices");
   const [dark, setDark] = useState<boolean>(() => {
     if (propDark !== undefined) return propDark;
     if (typeof window !== "undefined") {
@@ -152,19 +153,19 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
   const totalPaid = useMemo(() => invoices.reduce((s, i) => s + Number(i.paid_amount || 0), 0), [invoices]);
   const totalExpenses = useMemo(() => expenses.reduce((s, e) => s + Number(e.amount || 0), 0), [expenses]);
 
-  // Design Tokens
-  const bgMain = dark ? "bg-[#090d16] text-[#f1f5f9]" : "bg-slate-50 text-slate-900";
-  const bgSidebar = dark ? "bg-[#101422] border-white/10" : "bg-white border-slate-200";
-  const bgCard = dark ? "bg-[#141828]/90 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900";
-  const inputBg = dark ? "bg-[#1c2236] border-white/10 text-white placeholder-slate-400" : "bg-white border-slate-200 text-slate-900 placeholder-slate-400";
-  const mutedText = dark ? "text-slate-400" : "text-slate-500";
+  // Design Tokens (Nocturne & Ivory Luxury Palette)
+  const bgMain = dark ? "bg-[#0c1017] text-[#f1f5f9]" : "bg-[#fbf8f2] text-[#1c1917]";
+  const bgSidebar = dark ? "bg-[#0f1420] border-[#1b2438]" : "bg-[#f8f4ec] border-[#ede5d8]";
+  const bgCard = dark ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9]" : "bg-white border-[#eee6da] text-[#1c1917] shadow-[0_4px_20px_-2px_rgba(180,155,120,0.08)]";
+  const inputBg = dark ? "bg-[#171f30] border-[#222d42] text-[#f1f5f9] placeholder-[#5a687d]" : "bg-[#fcfaf7] border-[#e5dcd0] text-[#1c1917] placeholder-[#a8a199]";
+  const mutedText = dark ? "text-[#8e9bb0]" : "text-[#78716c]";
 
   if (page === "developers") {
     return <DeveloperWorkspace admin dark={dark} onBack={() => setPage("invoices")} onToggleTheme={handleToggleTheme} />;
   }
 
   type SubAdminNavLink = {
-    id: "invoices" | "expenses" | "leads" | "clients" | "developers";
+    id: "invoices" | "expenses" | "leads" | "clients" | "developers" | "vault";
     label: string;
     icon: React.ComponentType<any>;
     badge?: number;
@@ -176,6 +177,7 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
     { id: "leads", label: "Shared Leads & Follow-ups", icon: Users, badge: leads.length },
     { id: "clients", label: "Client Directory", icon: Briefcase, badge: clients.length },
     { id: "developers", label: "Developers & Projects", icon: Briefcase },
+    { id: "vault", label: "Credentials Vault", icon: KeyRound },
   ];
 
   return (
@@ -184,15 +186,19 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
       <aside className={`w-[260px] shrink-0 hidden md:flex flex-col border-r ${bgSidebar} h-screen z-20`}>
         {/* Brand */}
         <div className="p-5 border-b border-inherit flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center text-white font-bold text-base shadow-lg shadow-indigo-500/25">
+          <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-base border ${
+            dark 
+              ? "bg-[#171f30] border-[#222d42] text-[#cca45f] shadow-[0_0_15px_rgba(204,164,95,0.15)]" 
+              : "bg-white border-[#eee6da] text-[#a07432] shadow-sm"
+          }`}>
             Z
           </div>
           <div>
             <div className="font-bold text-[14px] leading-tight flex items-center gap-1.5">
-              ZootechX.ai
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              ZootechX<span className={dark ? "text-[#cca45f]" : "text-[#a07432]"}>.ai</span>
+              <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${dark ? "bg-[#cca45f]" : "bg-[#a07432]"}`} />
             </div>
-            <div className="text-[11px] text-indigo-400 font-mono font-medium">Sub-Admin Portal</div>
+            <div className={`text-[10px] font-mono uppercase tracking-widest font-semibold ${dark ? "text-[#cca45f]" : "text-[#a07432]"}`}>Sub-Admin Portal</div>
           </div>
         </div>
 
@@ -206,17 +212,17 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
                 onClick={() => setPage(item.id as any)}
                 className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-[13px] font-medium transition-all ${
                   active
-                    ? (dark ? "bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 text-white shadow-lg shadow-indigo-600/20" : "bg-slate-900 text-white shadow")
-                    : `${mutedText} ${dark ? "hover:bg-white/5 hover:text-white" : "hover:bg-slate-100 hover:text-slate-900"}`
+                    ? (dark ? "bg-[#171f30] text-[#cca45f] border border-[#cca45f]/30 shadow-md font-semibold" : "bg-white text-[#a07432] border border-[#eee6da] shadow-sm font-semibold")
+                    : `${mutedText} ${dark ? "hover:bg-[#121826] hover:text-[#f1f5f9]" : "hover:bg-[#f4eee4] hover:text-[#1c1917]"}`
                 }`}
               >
-                <item.icon size={18} className={active ? "text-white" : (dark ? "text-slate-400" : "text-slate-500")} />
+                <item.icon size={18} className={active ? (dark ? "text-[#cca45f]" : "text-[#a07432]") : (dark ? "text-slate-400" : "text-slate-500")} />
                 <span className="flex-1 text-left">{item.label}</span>
                 {item.badge !== undefined && (
                   <span
                     className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
                       active
-                        ? "bg-white/20 text-white"
+                        ? (dark ? "bg-[#cca45f]/20 text-[#cca45f]" : "bg-[#f5eddf] text-[#a07432]")
                         : (dark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-700")
                     }`}
                   >
@@ -264,6 +270,8 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
                 ? "Leads & Follow-ups"
                 : page === "clients"
                 ? "Clients Directory"
+                : page === "vault"
+                ? "Credentials & Secret Vault"
                 : "Developers & Projects"}
             </h2>
             <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 text-[10px] font-bold text-indigo-400">
@@ -272,15 +280,27 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Nocturne & Ivory Theme Toggle Button */}
             <button
               onClick={handleToggleTheme}
-              title={dark ? "Switch to light theme" : "Switch to dark theme"}
-              aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
-              className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all ${
-                dark ? "border-white/10 bg-white/5 text-amber-400 hover:bg-white/10" : "border-slate-200 bg-white text-indigo-600 hover:bg-slate-50"
+              title={dark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
+              aria-label={dark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
+              className={`flex items-center gap-2.5 px-3 py-1.5 rounded-full border transition-all ${
+                dark 
+                  ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9] hover:border-[#cca45f]/40 shadow-sm" 
+                  : "bg-white border-[#eee6da] text-[#1c1917] hover:border-[#a07432]/40 shadow-sm"
               }`}
             >
-              {dark ? <Sun size={15} /> : <Moon size={15} />}
+              <span className="text-[10px] font-bold tracking-widest uppercase font-mono">
+                {dark ? "NOCTURNE" : "IVORY"}
+              </span>
+              <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${
+                dark ? "bg-[#090d16] justify-end" : "bg-[#ede5d8] justify-start"
+              }`}>
+                <div className={`w-3 h-3 rounded-full shadow transition-transform ${
+                  dark ? "bg-[#cca45f]" : "bg-[#b88a44]"
+                }`} />
+              </div>
             </button>
 
             <button
@@ -359,24 +379,27 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
                       {invoices.map((inv) => {
                         const isPaid = Number(inv.paid_amount) >= Number(inv.total);
                         return (
-                          <tr key={inv.id} className={`hover:${dark ? "bg-white/5" : "bg-slate-50"} transition`}>
-                            <td className={`p-3.5 text-xs font-mono font-semibold ${dark ? "text-white" : "text-slate-900"}`}>{inv.invoice_number}</td>
-                            <td className={`p-3.5 text-xs font-medium ${dark ? "text-slate-200" : "text-slate-800"}`}>{inv.client_name}</td>
-                            <td className={`p-3.5 text-xs font-mono font-bold text-right ${dark ? "text-white" : "text-slate-900"}`}>
+                          <tr key={inv.id} className={`hover:${dark ? "bg-[#171f30]/60" : "bg-[#f6f1e7]"} transition`}>
+                            <td className={`p-3.5 text-xs font-mono font-semibold ${dark ? "text-[#cca45f]" : "text-[#a07432]"}`}>{inv.invoice_number}</td>
+                            <td className={`p-3.5 text-xs font-medium ${dark ? "text-[#f1f5f9]" : "text-[#1c1917]"}`}>{inv.client_name}</td>
+                            <td className={`p-3.5 text-xs font-mono font-bold text-right ${dark ? "text-[#f1f5f9]" : "text-[#1c1917]"}`}>
                               ₹{Number(inv.total).toLocaleString()}
                             </td>
-                            <td className="p-3.5 text-xs font-mono text-right text-emerald-400">
+                            <td className={`p-3.5 text-xs font-mono text-right font-semibold ${dark ? "text-[#cca45f]" : "text-[#a07432]"}`}>
                               ₹{Number(inv.paid_amount).toLocaleString()}
                             </td>
                             <td className="p-3.5">
                               <span
-                                className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
+                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
                                   isPaid
-                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                    ? (dark ? "bg-[#cca45f]/15 text-[#cca45f] border-[#cca45f]/30" : "bg-[#f5eddf] text-[#966c2d] border-[#e8dfd1]")
                                     : "bg-amber-500/10 text-amber-400 border-amber-500/20"
                                 }`}
                               >
-                                {isPaid ? "Paid in Full" : "Pending Balance"}
+                                <span className={`h-1.5 w-1.5 rounded-full ${
+                                  isPaid ? (dark ? "bg-[#cca45f]" : "bg-[#b88a44]") : "bg-amber-400"
+                                }`} />
+                                {isPaid ? "Paid" : "Pending"}
                               </span>
                             </td>
                           </tr>
@@ -512,6 +535,12 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
             </div>
           )}
 
+          {/* TAB 6: CREDENTIALS VAULT */}
+          {page === "vault" && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <CredentialsVault dark={dark} />
+            </div>
+          )}
         </main>
       </div>
 

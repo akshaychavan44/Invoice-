@@ -355,12 +355,12 @@ export default function CredentialsVault({ dark = true }: { dark?: boolean }) {
     return notes.replace(/^\[[A-Z_]+\]\s*/, "");
   };
 
-  // Colors
-  const bgCard = dark ? "bg-[#141824]/90 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900";
-  const inputBg = dark ? "bg-[#1c2234] border-white/10 text-white placeholder-slate-400" : "bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400";
-  const mutedText = dark ? "text-slate-400" : "text-slate-500";
-  const pillActive = dark ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "bg-slate-900 text-white shadow";
-  const pillInactive = dark ? "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5" : "bg-slate-100 text-slate-600 hover:bg-slate-200 border border-transparent";
+  // Colors (Nocturne & Ivory Luxury Palette)
+  const bgCard = dark ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9]" : "bg-white border-[#eee6da] text-[#1c1917] shadow-[0_4px_20px_-2px_rgba(180,155,120,0.08)]";
+  const inputBg = dark ? "bg-[#171f30] border-[#222d42] text-[#f1f5f9] placeholder-[#5a687d]" : "bg-[#fcfaf7] border-[#e5dcd0] text-[#1c1917] placeholder-[#a8a199]";
+  const mutedText = dark ? "text-[#8e9bb0]" : "text-[#78716c]";
+  const pillActive = dark ? "bg-[#171f30] text-[#cca45f] border border-[#cca45f]/40 shadow-sm font-semibold" : "bg-white text-[#a07432] border border-[#eee6da] shadow-sm font-semibold";
+  const pillInactive = dark ? "bg-[#121826] text-[#8e9bb0] hover:bg-[#171f30] hover:text-[#f1f5f9] border border-[#1e293b]" : "bg-[#f8f4ec] text-[#78716c] hover:bg-[#ede5d8] border border-[#eee6da]";
 
   return (
     <div className="w-full space-y-6">

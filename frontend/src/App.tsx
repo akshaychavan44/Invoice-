@@ -3,6 +3,7 @@ import SalesDashboard from "./components/SalesDashboard";
 import SubAdminDashboard from "./components/SubAdminDashboard";
 import DeveloperWorkspace from "./components/DeveloperWorkspace";
 import PaymentsWorkspace from "./components/PaymentsWorkspace";
+import CredentialsVault from "./components/CredentialsVault";
 import { ClientsPage, CreateInvoicePage, DashboardPage, ExpensesPage, FollowUpsPage, InvoicesPage, LeadsPage, PaymentsPage, QuotationsPage } from "./components/pages/CrmPages";
 import "./app.css";
 import { apiFetch, AuthUser } from "./lib/api";
@@ -569,17 +570,17 @@ export default function App() {
     });
   };
 
-  // theme classes
-  const bgMain = isDark ? "bg-[#070a13]" : "bg-[#f8fafc]";
-  const bgCard = isDark ? "bg-[#0f1424]/90 border-white/10" : "bg-white border-slate-200/90 shadow-sm";
-  const bgSidebar = isDark ? "bg-[#0a0d18] border-white/10" : "bg-white border-slate-200 shadow-sm";
-  const textMain = isDark ? "text-[#f8fafc]" : "text-slate-900";
-  const textMuted = isDark ? "text-slate-400" : "text-slate-500";
-  const borderC = isDark ? "border-white/10" : "border-slate-200";
-  const inputCls = isDark ? "bg-white/5 border-white/10 text-white placeholder-slate-500" : "bg-white border-slate-200 text-slate-900 placeholder-slate-400 shadow-sm";
-  const textPrimary = isDark ? "text-white" : "text-slate-900";
-  const textSecondary = isDark ? "text-slate-300" : "text-slate-600";
-  const bgMuted = isDark ? "bg-white/5" : "bg-slate-100/90";
+  // theme classes (Nocturne & Ivory Luxury Palette)
+  const bgMain = isDark ? "bg-[#0c1017]" : "bg-[#fbf8f2]";
+  const bgCard = isDark ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9]" : "bg-white border-[#eee6da] text-[#1c1917] shadow-[0_4px_20px_-2px_rgba(180,155,120,0.08)]";
+  const bgSidebar = isDark ? "bg-[#0f1420] border-[#1b2438]" : "bg-[#f8f4ec] border-[#ede5d8]";
+  const textMain = isDark ? "text-[#f1f5f9]" : "text-[#1c1917]";
+  const textMuted = isDark ? "text-[#8e9bb0]" : "text-[#78716c]";
+  const borderC = isDark ? "border-[#1b2438]" : "border-[#ede5d8]";
+  const inputCls = isDark ? "bg-[#171f30] border-[#222d42] text-[#f1f5f9] placeholder-[#5a687d]" : "bg-[#fcfaf7] border-[#e5dcd0] text-[#1c1917] placeholder-[#a8a199] shadow-sm";
+  const textPrimary = isDark ? "text-[#f1f5f9]" : "text-[#1c1917]";
+  const textSecondary = isDark ? "text-[#a0aec0]" : "text-[#57534e]";
+  const bgMuted = isDark ? "bg-[#171f30]" : "bg-[#f4eee4]";
   const logout = () => {
     localStorage.removeItem("zootechx_token");
     localStorage.removeItem("zootechx_user");
@@ -610,7 +611,7 @@ if (!isLoggedIn) {
   );
 }
 if (userRole === "SALES") {
-  return <SalesDashboard onLogout={logout} dark={isDark} />;
+  return <SalesDashboard onLogout={logout} dark={isDark} onToggleTheme={toggleTheme} />;
 }
 if (userRole === "DEVELOPER") {
   return <DeveloperWorkspace onLogout={logout} dark={isDark} onToggleTheme={toggleTheme} />;
@@ -628,15 +629,20 @@ if (userRole === "SUB_ADMIN") {
       <aside className={`w-[260px] shrink-0 hidden lg:flex flex-col ${bgSidebar} border-r h-screen z-10`}>
         <div className="p-5 border-b border-inherit flex items-center gap-3 relative">
           <div className="relative">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center text-white font-bold text-[18px] shadow-[0_0_20px_rgba(99,102,241,0.35)]">Z</div>
-            <div className="absolute -top-1 -right-1 h-[10px] w-[10px]">
-              <div className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-60" />
-              <div className="relative h-[8px] w-[8px] rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[#0f0f1a]" />
-            </div>
+            <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-[16px] border ${
+              isDark 
+                ? "bg-[#171f30] border-[#222d42] text-[#cca45f] shadow-[0_0_15px_rgba(204,164,95,0.15)]" 
+                : "bg-white border-[#eee6da] text-[#a07432] shadow-sm"
+            }`}>Z</div>
           </div>
           <div>
-            <div className="font-bold leading-none text-[15px] flex items-center gap-1.5">ZootechX.ai <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"/></div>
-            <div className={`text-[11px] ${textMuted} mono flex items-center gap-1`}><span className="h-2 w-2 rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400 animate-pulse"/>ERP OS • v2.6</div>
+            <div className="font-bold leading-tight text-[15px] flex items-center gap-1.5">
+              ZootechX<span className={isDark ? "text-[#cca45f]" : "text-[#a07432]"}>.ai</span>
+              <span className={`h-1.5 w-1.5 rounded-full inline-block animate-pulse ${isDark ? "bg-[#cca45f]" : "bg-[#a07432]"}`}/>
+            </div>
+            <div className={`text-[10px] ${textMuted} font-mono uppercase tracking-widest font-semibold`}>
+              ERP SYSTEM
+            </div>
           </div>
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
@@ -650,15 +656,22 @@ if (userRole === "SUB_ADMIN") {
             { id:"clients", label:"Clients", icon:Users },
             { id:"developers", label:"Developers & Projects", icon:Briefcase },
             { id:"payments", label:"Payments", icon:CreditCard },
+            { id:"vault", label:"Credentials Vault", icon:KeyRound },
           ].map(item=>{
             const active = currentPage===item.id;
             return (
               <button key={item.id} onClick={()=> setCurrentPage(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium transition-all ${active ? (isDark ? "bg-[#1c1c2e] text-white border border-[#2a2a40]" : "bg-slate-900 text-white shadow") : `${textMuted} hover:${isDark?"bg-[#1a1a2a] text-white":"bg-slate-100 text-slate-900"}`}`}>
-                <item.icon size={18} className={item.isNew ? "text-violet-500" : ""} />
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium transition-all ${
+                  active 
+                    ? (isDark 
+                        ? "bg-[#171f30] text-[#cca45f] border border-[#cca45f]/30 shadow-md font-semibold" 
+                        : "bg-white text-[#a07432] border border-[#eee6da] shadow-sm font-semibold") 
+                    : `${textMuted} hover:${isDark ? "bg-[#121826] text-[#f1f5f9]" : "bg-[#f4eee4] text-[#1c1917]"}`
+                }`}>
+                <item.icon size={18} className={item.isNew ? (isDark ? "text-[#cca45f]" : "text-[#a07432]") : ""} />
                 <span className="flex-1 text-left">{item.label}</span>
-                {item.badge ? <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${item.badgeColor||"bg-indigo-600 text-white"}`}>{item.badge}</span> : null}
-                {item.isNew ? <span className="text-[10px] bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-1.5 py-0.5 rounded-full">NEW</span> : null}
+                {item.badge ? <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${item.badgeColor||(isDark?"bg-[#cca45f] text-black font-bold":"bg-[#a07432] text-white font-bold")}`}>{item.badge}</span> : null}
+                {item.isNew ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-[#cca45f]/20 text-[#cca45f] border border-[#cca45f]/30" : "bg-[#f5eddf] text-[#a07432] border border-[#e8dfd1]"}`}>NEW</span> : null}
               </button>
             )
           })}
@@ -705,7 +718,11 @@ if (userRole === "SUB_ADMIN") {
           <div className="flex items-center gap-3">
             {/* New dropdown */}
             <div className="relative">
-              <button onClick={()=> setNewDropdownOpen(!newDropdownOpen)} className={`shine-btn h-10 px-4 rounded-xl border flex items-center gap-2 text-[13px] font-semibold ${isDark?"bg-white text-black border-white":"bg-slate-900 text-white border-slate-900"} shadow-lg hover:shadow-[0_0_24px_rgba(99,102,241,0.45)] transition-all hover:scale-[1.02] active:scale-[0.98]`}>
+              <button onClick={()=> setNewDropdownOpen(!newDropdownOpen)} className={`shine-btn h-10 px-4 rounded-xl border flex items-center gap-2 text-[13px] font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] ${
+                isDark 
+                  ? "bg-[#171f30] text-[#cca45f] border-[#cca45f]/40 hover:bg-[#1f2940] shadow-md shadow-[#cca45f]/5" 
+                  : "bg-[#1c1917] text-[#faf6ee] border-[#1c1917] hover:bg-[#292524] shadow-md"
+              }`}>
                 <Plus size={16}/> <span className="hidden sm:inline">New</span> <ChevronDown size={14}/>
               </button>
               {newDropdownOpen && (
@@ -714,10 +731,11 @@ if (userRole === "SUB_ADMIN") {
                     { label:"New Invoice", desc:"Create GST invoice", icon:FileText, action:()=> { setCurrentPage("invoices/new"); setNewDropdownOpen(false);} },
                     { label:"New Lead", desc:"Add potential client", icon:UserPlus, action:()=> { setShowAddLead(true); setNewDropdownOpen(false);} },
                     { label:"Follow Up", desc:"Schedule follow-up", icon:BellRing, action:()=> { setShowFollowUpModal(true); setNewDropdownOpen(false);} },
+                    { label:"Store Credential", desc:"Save key or password to vault", icon:KeyRound, action:()=> { setCurrentPage("vault"); setNewDropdownOpen(false);} },
                     { label:"AI Generate Invoice", desc:"Auto from conversation", icon:Wand2, action:()=> { setCurrentPage("invoices/new"); setNewDropdownOpen(false);} },
                   ].map(i=> (
-                    <button key={i.label} onClick={i.action} className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left hover:${isDark?"bg-white/5":"bg-slate-50"} transition`}>
-                      <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${isDark?"bg-white/10 text-indigo-400":"bg-slate-100 text-indigo-600"}`}><i.icon size={16}/></div>
+                    <button key={i.label} onClick={i.action} className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left hover:${isDark?"bg-white/5":"bg-[#f6f1e7]"} transition`}>
+                      <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${isDark?"bg-[#171f30] text-[#cca45f]":"bg-[#f5eddf] text-[#a07432]"}`}><i.icon size={16}/></div>
                       <div><div className="text-[13px] font-semibold">{i.label}</div><div className={`text-[11px] ${textMuted}`}>{i.desc}</div></div>
                     </button>
                   ))}
@@ -725,17 +743,27 @@ if (userRole === "SUB_ADMIN") {
               )}
             </div>
 
+            {/* Nocturne & Ivory Theme Toggle Button */}
             <button
               onClick={toggleTheme}
-              title={isDark ? "Switch to light theme" : "Switch to dark theme"}
-              aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
-              className={`h-10 w-10 rounded-xl border flex items-center justify-center transition-all ${bgCard} hover:scale-105 shadow-sm active:scale-95`}
+              title={isDark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
+              aria-label={isDark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
+              className={`flex items-center gap-2.5 px-3 py-1.5 rounded-full border transition-all ${
+                isDark 
+                  ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9] hover:border-[#cca45f]/40 shadow-sm" 
+                  : "bg-white border-[#eee6da] text-[#1c1917] hover:border-[#a07432]/40 shadow-sm"
+              }`}
             >
-              {isDark ? (
-                <Sun size={17} className="text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
-              ) : (
-                <Moon size={17} className="text-indigo-600" />
-              )}
+              <span className="text-[10px] font-bold tracking-widest uppercase font-mono">
+                {isDark ? "NOCTURNE" : "IVORY"}
+              </span>
+              <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${
+                isDark ? "bg-[#090d16] justify-end" : "bg-[#ede5d8] justify-start"
+              }`}>
+                <div className={`w-3 h-3 rounded-full shadow transition-transform ${
+                  isDark ? "bg-[#cca45f]" : "bg-[#b88a44]"
+                }`} />
+              </div>
             </button>
 
             <div className="relative">
@@ -1236,7 +1264,7 @@ if (userRole === "SUB_ADMIN") {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                   { label:"Total Invoiced", value: `₹${(invoices.reduce((s,i)=> s + (Number(i.total)||0), 0)).toLocaleString()}`, color: textPrimary },
-                  { label:"Paid Settlements", value: `₹${(invoices.reduce((s,i)=> s + (i.status === "Paid" ? Number(i.total) : (Number(i.amountPaid)||0)), 0)).toLocaleString()}`, color: isDark ? "text-emerald-400" : "text-emerald-600" },
+                  { label:"Paid Settlements", value: `₹${(invoices.reduce((s,i)=> s + (i.status === "Paid" ? Number(i.total) : (Number(i.amountPaid)||0)), 0)).toLocaleString()}`, color: isDark ? "text-[#cca45f]" : "text-[#a07432]" },
                   { label:"Pending Collection", value: `₹${Math.max(0, invoices.reduce((s,i)=> s + (i.status === "Paid" ? 0 : (Number(i.total) - (Number(i.amountPaid)||0))), 0)).toLocaleString()}`, color: isDark ? "text-amber-400" : "text-amber-600" },
                   { label:"Overdue Invoices", value: invoices.filter(i=> i.status === "Overdue").length, color: isDark ? "text-rose-400" : "text-rose-600" },
                 ].map(stat => (
@@ -1264,21 +1292,22 @@ if (userRole === "SUB_ADMIN") {
                     </thead>
                     <tbody className={`divide-y ${borderC}`}>
                       {invoices.map(inv=> (
-                        <tr key={inv.id} className={`hover:${bgMuted} transition`}>
-                          <td className="p-3.5 font-bold mono text-indigo-400">{inv.number}</td>
+                        <tr key={inv.id} className={`hover:${isDark ? "bg-[#171f30]/60" : "bg-[#f6f1e7]"} transition`}>
+                          <td className={`p-3.5 font-bold mono ${isDark ? "text-[#cca45f]" : "text-[#a07432]"}`}>{inv.number}</td>
                           <td className={`p-3.5 font-medium ${textPrimary}`}>{inv.clientName}</td>
                           <td className={`p-3.5 font-mono ${textMuted}`}>{inv.date}</td>
                           <td className={`p-3.5 text-right font-bold font-mono ${textPrimary}`}>₹{inv.total.toLocaleString()}</td>
                           <td className={`p-3.5 text-right font-mono ${textMuted}`}>₹{inv.gstTotal.toLocaleString()}</td>
                           <td className="p-3.5">
                             <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
-                              inv.status==="Paid"?"bg-emerald-500/10 text-emerald-400 border-emerald-500/20":
+                              inv.status==="Paid"
+                                ? (isDark ? "bg-[#cca45f]/15 text-[#cca45f] border-[#cca45f]/30" : "bg-[#f5eddf] text-[#966c2d] border-[#e8dfd1]") :
                               inv.status==="Sent"?"bg-cyan-500/10 text-cyan-400 border-cyan-500/20":
                               inv.status==="Overdue"?"bg-rose-500/10 text-rose-400 border-rose-500/20":
                               "bg-amber-500/10 text-amber-400 border-amber-500/20"
                             }`}>
                               <span className={`h-1.5 w-1.5 rounded-full ${
-                                inv.status==="Paid"?"bg-emerald-400":
+                                inv.status==="Paid" ? (isDark ? "bg-[#cca45f]" : "bg-[#b88a44]") :
                                 inv.status==="Sent"?"bg-cyan-400":
                                 inv.status==="Overdue"?"bg-rose-400":
                                 "bg-amber-400"
@@ -1457,6 +1486,12 @@ if (userRole === "SUB_ADMIN") {
           {currentPage==="developers" && <DeveloperWorkspace admin dark={isDark} />}
 
           {currentPage === "payments" && <PaymentsPage><PaymentsWorkspace dark={isDark} role={userRole}/></PaymentsPage>}
+
+          {currentPage === "vault" && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <CredentialsVault dark={isDark} />
+            </div>
+          )}
         </main>
       </div>
 
