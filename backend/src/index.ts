@@ -1,5 +1,6 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
+import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import cors from "cors";
 import express, { Request, Response } from "express";
 import rateLimit from "express-rate-limit";
@@ -39,6 +40,10 @@ const projectStatus = z.enum(["NEW", "PENDING", "IN_PROGRESS", "COMPLETED"]);
 const projectInput = z.object({ name: z.string().min(2).max(160), clientName: z.string().max(160).optional(), description: z.string().max(5000).optional(), priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"), status: projectStatus.default("NEW"), dueDate: z.string().date().optional(), assignedDeveloperId: z.string().uuid() });
 const projectStatusInput = z.object({ status: projectStatus });
 const projectUpdateInput = z.object({ message: z.string().max(5000).optional().default(""), progress: z.number().int().min(0).max(100), status: projectStatus.optional() });
+const vaultItemInput = z.object({ label: z.string().min(2).max(120), service: z.string().min(2).max(160), username: z.string().min(1).max(500), secret: z.string().min(1).max(4000), notes: z.string().max(2000).optional() });
+const vaultKey = (): Buffer | null => { const value = process.env.VAULT_ENCRYPTION_KEY; if (!value) return null; const key = Buffer.from(value, "base64"); return key.length === 32 ? key : null; };
+const encryptVaultValue = (value: string, key: Buffer, iv: Buffer) => { const cipher = createCipheriv("aes-256-gcm", key, iv); return { value: Buffer.concat([cipher.update(value, "utf8"), cipher.final()]).toString("base64"), tag: cipher.getAuthTag().toString("base64") }; };
+const decryptVaultValue = (value: string, tag: string, key: Buffer, iv: Buffer) => { const decipher = createDecipheriv("aes-256-gcm", key, iv); decipher.setAuthTag(Buffer.from(tag, "base64")); return Buffer.concat([decipher.update(Buffer.from(value, "base64")), decipher.final()]).toString("utf8"); };
 app.get("/api/health", async (_request, response) => { await sql`SELECT 1`; response.json({ status: "ok", database: "neon" }); });
 app.post("/api/auth/login", async (request: Request, response: Response) => {
   const parsed = login.safeParse(request.body);
@@ -235,6 +240,38 @@ app.post("/api/projects", requireAuth, allow("SUPER_ADMIN"), async (request: Aut
 app.patch("/api/projects/:id/status", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => { const parsed = projectStatusInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid project status" }); return; } const projectId = String(request.params.id); try { const rows = await sql`UPDATE projects SET status = ${parsed.data.status}, progress_percentage = CASE WHEN ${parsed.data.status} = 'COMPLETED' THEN 100 ELSE progress_percentage END, updated_at = now() WHERE id = ${projectId} AND (${request.user!.role} = 'SUPER_ADMIN' OR assigned_developer_id = ${request.user!.id}) RETURNING *`; if (!rows[0]) { response.status(403).json({ message: "You cannot update this project" }); return; } response.json({ data: rows[0] }); } catch { response.status(503).json({ message:"Unable to update project status" }); } });
 app.get("/api/projects/:id/updates", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => { const projectId = String(request.params.id); try { const project = await sql`SELECT assigned_developer_id FROM projects WHERE id = ${projectId} LIMIT 1`; if (!project[0] || (request.user!.role === "DEVELOPER" && project[0].assigned_developer_id !== request.user!.id)) { response.status(403).json({ message: "You cannot view this project" }); return; } const rows = await sql`SELECT project_updates.*, users.name AS author_name FROM project_updates JOIN users ON users.id = project_updates.author_id WHERE project_updates.project_id = ${projectId} ORDER BY project_updates.created_at DESC`; response.json({ data: rows }); } catch { const project = await fallbackProject(projectId); if (!project || (request.user!.role === "DEVELOPER" && project.assigned_developer_id !== request.user!.id)) { response.status(403).json({ message: "You cannot view this project" }); return; } response.json({ data: await listFallbackUpdates(projectId), fallback: true }); } });
 app.post("/api/projects/:id/updates", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => { const parsed = projectUpdateInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid project update", errors: parsed.error.flatten() }); return; } const data = parsed.data; const projectId = String(request.params.id); try { const project = await sql`SELECT id, assigned_developer_id, status, progress_percentage FROM projects WHERE id = ${projectId} LIMIT 1`; if (!project[0] || (request.user!.role === "DEVELOPER" && project[0].assigned_developer_id !== request.user!.id)) { response.status(403).json({ message: "You cannot update this project" }); return; } const nextStatus = data.status ?? (data.progress === 100 ? "COMPLETED" : data.progress > 0 ? "IN_PROGRESS" : project[0].status); if (nextStatus === "COMPLETED" && data.progress < 100) { response.status(400).json({ message:"Completed projects must be 100% complete" }); return; } const nextProgress = nextStatus === "COMPLETED" ? 100 : data.progress; const rows = await sql`INSERT INTO project_updates (project_id, author_id, message, progress, old_status, new_status, old_percentage, new_percentage) VALUES (${projectId}, ${request.user!.id}, ${data.message}, ${nextProgress}, ${project[0].status}, ${nextStatus}, ${project[0].progress_percentage ?? 0}, ${nextProgress}) RETURNING *`; await sql`UPDATE projects SET status = ${nextStatus}, progress_percentage = ${nextProgress}, updated_at = now() WHERE id = ${projectId}`; response.status(201).json({ data: rows[0], project:{ id:projectId, status:nextStatus, progress:nextProgress } }); } catch { response.status(503).json({ message:"Unable to save project progress" }); } });
+app.get("/api/vault", requireAuth, async (request: AuthRequest, response) => {
+  const key = vaultKey();
+  if (!key) { response.status(503).json({ message: "Credentials Vault is not configured. Add VAULT_ENCRYPTION_KEY to the API environment." }); return; }
+  try {
+    const data = await sql`SELECT id, label, service, notes, created_at, updated_at FROM credential_vault_items WHERE owner_id = ${request.user!.id} ORDER BY updated_at DESC`;
+    response.json({ data });
+  } catch { response.status(503).json({ message: "Unable to open your Credentials Vault." }); }
+});
+app.post("/api/vault", requireAuth, async (request: AuthRequest, response) => {
+  const parsed = vaultItemInput.safeParse(request.body); const key = vaultKey();
+  if (!parsed.success) { response.status(400).json({ message:"Enter a label, service, username, and secret." }); return; }
+  if (!key) { response.status(503).json({ message: "Credentials Vault is not configured. Add VAULT_ENCRYPTION_KEY to the API environment." }); return; }
+  try {
+    const iv = randomBytes(12); const encrypted = encryptVaultValue(JSON.stringify({ username:parsed.data.username, secret:parsed.data.secret }), key, iv);
+    const rows = await sql`INSERT INTO credential_vault_items (owner_id, label, service, username_ciphertext, secret_ciphertext, iv, auth_tag, notes) VALUES (${request.user!.id}, ${parsed.data.label}, ${parsed.data.service}, ${encrypted.value}, ${"vault-v1"}, ${iv.toString("base64")}, ${encrypted.tag}, ${parsed.data.notes ?? null}) RETURNING id, label, service, notes, created_at, updated_at`;
+    response.status(201).json({ data:{ ...rows[0], username:parsed.data.username, secret:parsed.data.secret } });
+  } catch { response.status(503).json({ message:"Unable to save this credential." }); }
+});
+app.post("/api/vault/:id/reveal", requireAuth, async (request: AuthRequest, response) => {
+  const key = vaultKey();
+  if (!key) { response.status(503).json({ message: "Credentials Vault is not configured." }); return; }
+  try {
+    const rows = await sql`SELECT username_ciphertext, iv, auth_tag FROM credential_vault_items WHERE id = ${String(request.params.id)} AND owner_id = ${request.user!.id} LIMIT 1`;
+    if (!rows[0]) { response.status(404).json({ message:"Vault item not found." }); return; }
+    const row: any = rows[0]; const value = JSON.parse(decryptVaultValue(row.username_ciphertext, row.auth_tag, key, Buffer.from(row.iv, "base64"))) as { username:string; secret:string };
+    response.json({ data:value });
+  } catch { response.status(503).json({ message:"Unable to reveal this credential." }); }
+});
+app.delete("/api/vault/:id", requireAuth, async (request: AuthRequest, response) => {
+  try { const rows = await sql`DELETE FROM credential_vault_items WHERE id = ${String(request.params.id)} AND owner_id = ${request.user!.id} RETURNING id`; if (!rows[0]) { response.status(404).json({ message:"Vault item not found." }); return; } response.status(204).send(); }
+  catch { response.status(503).json({ message:"Unable to remove this credential." }); }
+});
 app.use((_request, response) => response.status(404).json({ message: "Route not found" }));
 app.use((error: Error, _request: Request, response: Response, _next: express.NextFunction) => {
   console.error(error);

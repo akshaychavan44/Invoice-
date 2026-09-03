@@ -142,3 +142,36 @@ body { min-height: 100dvh; margin: 0; overflow-x: hidden; background: #1d2028; }
 .developer-workspace button:not(:disabled):active { transform: translateY(1px); }
 .developer-workspace .h-1\.5 > div { transition: width .55s cubic-bezier(.22,1,.36,1); }
 @keyframes developer-orbit { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(-18px,14px,0) scale(1.08); } }
+
+/* Unified product design system: shared visual refinements without changing UI behavior. */
+:root { --luxury-line: rgba(148, 163, 184, .22); --luxury-violet: #5b5ce2; --luxury-shadow: 0 16px 45px rgba(15, 23, 42, .08); }
+.luxury-app { background-image: radial-gradient(circle at 100% 0%, rgba(99, 102, 241, .10), transparent 30%), radial-gradient(circle at 0% 100%, rgba(14, 165, 233, .055), transparent 26%); letter-spacing: -.01em; }
+.luxury-app button, .luxury-app input, .luxury-app select, .luxury-app textarea { font: inherit; }
+.luxury-app button:not(:disabled) { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease, color .18s ease; }
+.luxury-app button:not(:disabled):active { transform: translateY(1px) scale(.99); }
+.luxury-app button:focus-visible, .developer-workspace button:focus-visible, .login-shell button:focus-visible { outline: 3px solid rgba(99, 102, 241, .32); outline-offset: 3px; }
+.luxury-app input:focus, .luxury-app select:focus, .luxury-app textarea:focus { border-color: rgba(99, 102, 241, .72) !important; box-shadow: 0 0 0 4px rgba(99, 102, 241, .12) !important; }
+.luxury-app input, .luxury-app select, .luxury-app textarea { transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease; }
+
+/* Premium navigation and layered content panels. */
+.luxury-app nav button { position: relative; min-height: 42px; }
+.luxury-app nav button:hover { transform: translateX(2px); }
+.luxury-app nav button[class*="bg-[#1c1c2e]"], .luxury-app nav button[class*="bg-slate-900"], .luxury-app nav button[class*="from-indigo-600"] { box-shadow: 0 10px 24px rgba(79, 70, 229, .18), inset 0 1px 0 rgba(255,255,255,.10); }
+.luxury-app nav button[class*="bg-[#1c1c2e]"]::before, .luxury-app nav button[class*="bg-slate-900"]::before { position: absolute; left: -13px; width: 3px; height: 20px; border-radius: 0 5px 5px 0; background: #818cf8; content: ""; }
+.luxury-app .rounded-2xl.border, .luxury-app .rounded-3xl.border, .developer-workspace .rounded-2xl.border { box-shadow: var(--luxury-shadow), inset 0 1px 0 rgba(255,255,255,.38); }
+.luxury-app .rounded-2xl.border:hover, .luxury-app .rounded-3xl.border:hover { border-color: rgba(129, 140, 248, .36) !important; }
+.luxury-app table { border-collapse: separate; border-spacing: 0; }
+.luxury-app thead th { padding-top: .9rem !important; padding-bottom: .9rem !important; color: #64748b; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.luxury-app tbody tr { transition: background-color .16s ease, transform .16s ease; }
+.luxury-app tbody tr:hover { background: rgba(99, 102, 241, .045); }
+.luxury-app [class*="overflow-x-auto"] { scrollbar-gutter: stable; }
+.luxury-app [class*="fixed inset-0"] > form, .luxury-app [class*="fixed inset-0"] > div[class*="relative"] { animation: luxury-modal-in .22s cubic-bezier(.22, 1, .36, 1) both; }
+.luxury-app [class*="backdrop-blur"] { animation: luxury-fade .18s ease-out both; }
+.luxury-app .dashboard-stat { overflow: hidden; }
+.luxury-app .dashboard-stat:hover { transform: translateY(-3px); }
+
+/* Responsive canvas and touch-friendly controls retain every existing feature. */
+@media (max-width: 1023px) { .luxury-app > div > main, .luxury-app main { padding: 18px !important; } .luxury-app .max-w-\[1600px\], .luxury-app .max-w-\[1500px\] { max-width: 100%; } }
+@media (max-width: 640px) { .luxury-app > div > main, .luxury-app main { padding: 14px !important; padding-bottom: 82px !important; } .luxury-app h1 { font-size: 1.35rem !important; line-height: 1.25; } .luxury-app .grid-cols-2 { grid-template-columns: minmax(0, 1fr); } .luxury-app .min-w-\[220px\] { min-width: 100%; } .luxury-app [class*="fixed inset-0"] { padding: 12px; } }
+@keyframes luxury-modal-in { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes luxury-fade { from { opacity: 0; } to { opacity: 1; } }

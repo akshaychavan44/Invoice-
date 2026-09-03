@@ -85,7 +85,8 @@ export default function App() {
   const [userRole, setUserRole] = useState("");
   const [authChecking, setAuthChecking] = useState(true);
   const [isDark, setIsDark] = useState(true);
-  const [currentPage, setCurrentPage] = useState("dashboard");
+  const [currentPage, setCurrentPage] = useState(() => typeof window === "undefined" ? "dashboard" : new URLSearchParams(window.location.search).get("view") || "dashboard");
+  const navigationReady = useRef(false); const navigationFromHistory = useRef(false);
   const [leads, setLeads] = useState<Lead[]>([]);
 
  
@@ -193,7 +194,22 @@ export default function App() {
     loadCrmData();
   }, [isLoggedIn]);
 
-useEffect(()=>{ localStorage.setItem("zootechx_theme", isDark?"dark":"light"); },[isDark]);
+  useEffect(()=>{ localStorage.setItem("zootechx_theme", isDark?"dark":"light"); },[isDark]);
+
+  // Keep each workspace destination addressable. The selected screen survives refresh,
+  // and browser back/forward now follows the app navigation instead of losing context.
+  useEffect(() => {
+    const onPopState = () => { navigationFromHistory.current = true; setCurrentPage(new URLSearchParams(window.location.search).get("view") || "dashboard"); };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  useEffect(() => {
+    if (!isLoggedIn || userRole !== "SUPER_ADMIN") return;
+    const url = new URL(window.location.href); url.searchParams.set("view", currentPage);
+    if (!navigationReady.current) { window.history.replaceState(null, "", url); navigationReady.current = true; return; }
+    if (navigationFromHistory.current) { navigationFromHistory.current = false; return; }
+    window.history.pushState(null, "", url);
+  }, [currentPage, isLoggedIn, userRole]);
 
   useEffect(() => {
     const closeSearchOnOutsideClick = (event: MouseEvent) => {
@@ -546,7 +562,7 @@ if (userRole === "SUB_ADMIN") {
   );
 }
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }} className={`premium-dashboard h-[100dvh] min-h-screen overflow-hidden font-sans antialiased flex ${bgMain} ${textMain} transition-colors duration-300`}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }} className={`luxury-app premium-dashboard h-[100dvh] min-h-screen overflow-hidden font-sans antialiased flex ${bgMain} ${textMain} transition-colors duration-300`}>
       
 
       {/* SIDEBAR */}

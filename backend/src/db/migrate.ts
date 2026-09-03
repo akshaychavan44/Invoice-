@@ -41,6 +41,8 @@ async function migrate(): Promise<void> {
   await sql`ALTER TABLE project_updates ADD COLUMN IF NOT EXISTS new_status varchar(40)`;
   await sql`ALTER TABLE project_updates ADD COLUMN IF NOT EXISTS old_percentage integer`;
   await sql`ALTER TABLE project_updates ADD COLUMN IF NOT EXISTS new_percentage integer`;
+  await sql`CREATE TABLE IF NOT EXISTS credential_vault_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), owner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, label varchar(120) NOT NULL, service varchar(160) NOT NULL, username_ciphertext text NOT NULL, secret_ciphertext text NOT NULL, iv varchar(64) NOT NULL, auth_tag varchar(64) NOT NULL, notes text, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`CREATE INDEX IF NOT EXISTS credential_vault_items_owner_updated_idx ON credential_vault_items(owner_id, updated_at DESC)`;
   console.log("Neon schema created.");
 }
 migrate().catch((error: unknown) => { console.error(error); process.exitCode = 1; });
