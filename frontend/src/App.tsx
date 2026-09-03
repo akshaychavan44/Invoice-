@@ -703,7 +703,7 @@ if (userRole === "SUB_ADMIN") {
                 ].map(k=> (
                   <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ duration:.3 }} key={k.label} className={`dashboard-stat rounded-xl border p-4 ${bgCard}`}>
                     <div className={`mb-3 h-[3px] w-full rounded-full bg-gradient-to-r ${k.color}`}/>
-                    <div className="flex items-end justify-between gap-3"><div><div className="text-[25px] font-bold leading-none">{k.value}</div><div className={`mt-2 text-[11px] font-medium ${textMuted}`}>{k.label}</div></div><div className={`mb-0.5 flex items-center gap-1 text-[11px] font-semibold ${k.up?"text-emerald-600":"text-red-500"}`}>{k.up?<TrendingUp size={13}/>:<TrendingDown size={13}/>}{k.change}</div></div>
+                    <div className="flex items-end justify-between gap-3"><div><div className="text-[25px] font-bold leading-none">{k.value}</div><div className={`mt-2 text-[11px] font-medium ${textMuted}`}>{k.label}</div></div><div className="flex flex-col items-end gap-3"><div className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${k.color} text-white shadow-sm`}><k.icon size={16}/></div><div className={`flex items-center gap-1 text-[11px] font-semibold ${k.up?"text-emerald-600":"text-red-500"}`}>{k.up?<TrendingUp size={13}/>:<TrendingDown size={13}/>}{k.change}</div></div></div>
                   </motion.div>
                 ))}
               </div>
