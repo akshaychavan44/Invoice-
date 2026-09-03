@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { BriefcaseBusiness, CalendarDays, Code2, FolderKanban, LogOut, Plus, RefreshCw, Send, Trash2, Users } from "lucide-react";
+import { BriefcaseBusiness, CalendarDays, Code2, FolderKanban, Plus, RefreshCw, Send, Settings, Trash2, Users } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import AccountSettingsPanel from "./AccountSettingsPanel";
 
 type Developer = { id: string; name: string; email: string; assigned_projects?: number; completed_projects?: number; active_projects?: number; average_progress?: number | string; last_activity_at?: string | null };
 type Project = { id: string; name: string; client_name: string | null; description: string | null; status: string; priority: string; due_date: string | null; progress?: number | string; assigned_developer_id: string; developer_name?: string };
@@ -20,6 +21,7 @@ export default function DeveloperWorkspace({ admin = false, onLogout }: { admin?
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<"" | "developer" | "project" | "update">("");
   const [removingDeveloper, setRemovingDeveloper] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [developerForm, setDeveloperForm] = useState({ name: "", email: "", password: "" });
   const [projectForm, setProjectForm] = useState({ name: "", clientName: "", description: "", priority: "MEDIUM", dueDate: "", assignedDeveloperId: "" });
   const dueDateRef = useRef<HTMLInputElement>(null);
@@ -174,11 +176,12 @@ export default function DeveloperWorkspace({ admin = false, onLogout }: { admin?
           <div className="rounded-2xl bg-white/10 px-4 py-3 text-center"><div className="text-xl font-semibold">{projects.length}</div><div className="text-xs text-slate-300">{admin ? "projects" : "assigned"}</div></div>
           {admin && <div className="rounded-2xl bg-white/10 px-4 py-3 text-center"><div className="text-xl font-semibold">{developers.length}</div><div className="text-xs text-slate-300">developers</div></div>}
           <button aria-label="Refresh workspace" onClick={() => void load()} className="rounded-xl bg-white/10 p-3 transition hover:bg-white/20" title="Refresh workspace"><RefreshCw size={17} className={loading ? "animate-spin" : ""}/></button>
-          {onLogout && <button onClick={onLogout} className="flex items-center gap-2 rounded-xl border border-white/20 px-3 py-2.5 text-sm font-semibold transition hover:bg-white/10"><LogOut size={15}/>Log out</button>}
+          {onLogout && <button onClick={() => setShowSettings(current => !current)} className="flex items-center gap-2 rounded-xl border border-white/20 px-3 py-2.5 text-sm font-semibold transition hover:bg-white/10"><Settings size={15}/>Settings</button>}
         </div>
       </div>
     </div>
     {notice && <div role="status" className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">{notice}</div>}
+    {showSettings && onLogout && <AccountSettingsPanel onLogout={onLogout}/>} 
 
     {admin && <div className="space-y-5">
       <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }} className="w-full rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">

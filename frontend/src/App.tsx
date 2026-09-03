@@ -2,7 +2,7 @@ import Login from "./components/Login";
 import SalesDashboard from "./components/SalesDashboard";
 import SubAdminDashboard from "./components/SubAdminDashboard";
 import DeveloperWorkspace from "./components/DeveloperWorkspace";
-import ChangePasswordControl from "./components/ChangePasswordControl";
+import AccountSettingsPanel from "./components/AccountSettingsPanel";
 import PaymentsWorkspace from "./components/PaymentsWorkspace";
 import { ClientsPage, CreateInvoicePage, DashboardPage, ExpensesPage, FollowUpsPage, InvoicesPage, LeadsPage, PaymentsPage, QuotationsPage, SettingsPage } from "./components/pages/CrmPages";
 import "./app.css";
@@ -11,11 +11,11 @@ import { apiFetch, AuthUser } from "./lib/api";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import {
-  LayoutDashboard, UserPlus, BellRing, FileText, Plus, FileQuestion, Users, Building2,
+  LayoutDashboard, UserPlus, BellRing, FileText, Plus, FileQuestion, Users,
   CreditCard, Calculator, Settings, Search, Sun, Moon, Bell, ChevronDown, X, Eye,
   Phone, MessageCircle, Mail, Calendar, MapPin, TrendingUp, TrendingDown, Clock,
   Check, AlertCircle, ArrowLeft, Save, Wand2, Sparkles, Bot, Filter,
-  Download, Edit3, Trash2, MoreHorizontal, ChevronRight, Briefcase, Home, Store, Factory, LandPlot, LogOut
+  Download, Edit3, Trash2, MoreHorizontal, ChevronRight, Briefcase, Home, Store, Factory, LandPlot
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -535,14 +535,14 @@ if (!isLoggedIn) {
   );
 }
 if (userRole === "SALES") {
-  return <><SalesDashboard onLogout={logout} /><ChangePasswordControl /></>;
+  return <SalesDashboard onLogout={logout} />;
 }
 if (userRole === "DEVELOPER") {
-  return <><DeveloperWorkspace onLogout={logout} /><ChangePasswordControl /></>;
+  return <DeveloperWorkspace onLogout={logout} />;
 }
 if (userRole === "SUB_ADMIN") {
   return (
-    <><SubAdminDashboard onLogout={logout} /><ChangePasswordControl /></>
+    <SubAdminDashboard onLogout={logout} />
   );
 }
   return (
@@ -594,7 +594,6 @@ if (userRole === "SUB_ADMIN") {
 
 
           <button onClick={()=> setCurrentPage("settings")} className={`mt-2 w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] ${textMuted} hover:bg-slate-100 dark:hover:bg-[#1a1a2a]`}><Settings size={18}/>Settings</button>
-          <button onClick={logout} className="mt-1 w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium text-red-400 hover:bg-red-500/10 transition"><LogOut size={18}/>Log out</button>
         </div>
       </aside>
 
@@ -1050,10 +1049,7 @@ if (userRole === "SUB_ADMIN") {
           {currentPage === "expenses" && <ExpensesPage><div className="max-w-[1000px] mx-auto"><h1 className="text-[22px] font-bold mb-5">Expenses</h1><div className={`rounded-2xl border overflow-hidden ${bgCard}`}><table className="w-full text-sm"><thead className={`${isDark?"bg-[#0f0f1a]":"bg-slate-50"}`}><tr><th className="p-3 text-left">Expense</th><th className="p-3 text-left">Category</th><th className="p-3 text-left">Method</th><th className="p-3 text-right">Amount</th></tr></thead><tbody>{expenses.map(expense => <tr key={expense.id} className={`border-t ${borderC}`}><td className="p-3">{expense.title}</td><td className="p-3">{expense.category}</td><td className="p-3">{expense.payment_method || "—"}</td><td className="p-3 text-right font-semibold">₹{Number(expense.amount).toLocaleString()}</td></tr>)}{expenses.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-500">No expenses recorded yet.</td></tr>}</tbody></table></div></div></ExpensesPage>}
           {currentPage === "settings" && (
             <SettingsPage>
-            <div className="max-w-[800px] mx-auto text-center py-20">
-              <div className={`h-16 w-16 mx-auto rounded-2xl flex items-center justify-center ${isDark?"bg-[#1c1c2e]":"bg-slate-100"} mb-4`}><Building2 size={28} className={textMuted}/></div>
-              <h2 className="text-[20px] font-bold capitalize">{currentPage}</h2><p className={`text-[13px] ${textMuted} mt-2`}>This module is part of ZootechX.ai ERP suite • Coming integrated with AI automation</p>
-            </div>
+            <div className="max-w-[800px] mx-auto py-20"><AccountSettingsPanel onLogout={logout} dark={isDark}/></div>
             </SettingsPage>
           )}
         </main>
@@ -1199,7 +1195,6 @@ if (userRole === "SUB_ADMIN") {
       {/* Click outside handlers */}
       {newDropdownOpen && <div className="fixed inset-0 z-10" onClick={()=> setNewDropdownOpen(false)}/>}
       {notifOpen && <div className="fixed inset-0 z-10" onClick={()=> setNotifOpen(false)}/>}
-      <ChangePasswordControl />
     </motion.div>
   );
 }
