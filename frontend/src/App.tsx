@@ -3,6 +3,7 @@ import SalesDashboard from "./components/SalesDashboard";
 import SubAdminDashboard from "./components/SubAdminDashboard";
 import DeveloperWorkspace from "./components/DeveloperWorkspace";
 import ChangePasswordControl from "./components/ChangePasswordControl";
+import PaymentsWorkspace from "./components/PaymentsWorkspace";
 import { ClientsPage, CreateInvoicePage, DashboardPage, ExpensesPage, FollowUpsPage, InvoicesPage, LeadsPage, PaymentsPage, QuotationsPage, SettingsPage } from "./components/pages/CrmPages";
 import "./app.css";
 import { apiFetch, AuthUser } from "./lib/api";
@@ -1045,7 +1046,7 @@ if (userRole === "SUB_ADMIN") {
 
           {currentPage==="developers" && <DeveloperWorkspace admin />}
 
-          {currentPage === "payments" && <PaymentsPage><div className="max-w-[1000px] mx-auto"><h1 className="text-[22px] font-bold mb-5">Payments</h1><div className={`rounded-2xl border overflow-hidden ${bgCard}`}><table className="w-full text-sm"><thead className={`${isDark?"bg-[#0f0f1a]":"bg-slate-50"}`}><tr><th className="p-3 text-left">Invoice</th><th className="p-3 text-left">Method</th><th className="p-3 text-right">Amount</th></tr></thead><tbody>{payments.map(payment => <tr key={payment.id} className={`border-t ${borderC}`}><td className="p-3">{payment.invoice_number}</td><td className="p-3">{payment.method}</td><td className="p-3 text-right font-semibold">₹{Number(payment.amount).toLocaleString()}</td></tr>)}{payments.length === 0 && <tr><td colSpan={3} className="p-8 text-center text-slate-500">No payments recorded yet.</td></tr>}</tbody></table></div></div></PaymentsPage>}
+          {currentPage === "payments" && <PaymentsPage><PaymentsWorkspace dark={isDark}/></PaymentsPage>}
           {currentPage === "expenses" && <ExpensesPage><div className="max-w-[1000px] mx-auto"><h1 className="text-[22px] font-bold mb-5">Expenses</h1><div className={`rounded-2xl border overflow-hidden ${bgCard}`}><table className="w-full text-sm"><thead className={`${isDark?"bg-[#0f0f1a]":"bg-slate-50"}`}><tr><th className="p-3 text-left">Expense</th><th className="p-3 text-left">Category</th><th className="p-3 text-left">Method</th><th className="p-3 text-right">Amount</th></tr></thead><tbody>{expenses.map(expense => <tr key={expense.id} className={`border-t ${borderC}`}><td className="p-3">{expense.title}</td><td className="p-3">{expense.category}</td><td className="p-3">{expense.payment_method || "—"}</td><td className="p-3 text-right font-semibold">₹{Number(expense.amount).toLocaleString()}</td></tr>)}{expenses.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-500">No expenses recorded yet.</td></tr>}</tbody></table></div></div></ExpensesPage>}
           {currentPage === "settings" && (
             <SettingsPage>

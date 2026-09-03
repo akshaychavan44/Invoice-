@@ -23,6 +23,8 @@ async function migrate(): Promise<void> {
   await sql`CREATE TABLE IF NOT EXISTS invoices (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), invoice_number varchar(32) NOT NULL UNIQUE, client_id uuid NOT NULL REFERENCES clients(id), total numeric(12,2) NOT NULL, paid_amount numeric(12,2) NOT NULL DEFAULT 0, due_date timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TABLE IF NOT EXISTS quotations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), quotation_number varchar(40) NOT NULL UNIQUE, client_id uuid REFERENCES clients(id), client_name varchar(160) NOT NULL, amount numeric(12,2) NOT NULL CHECK (amount > 0), valid_until date NOT NULL, status varchar(20) NOT NULL DEFAULT 'Draft', created_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TABLE IF NOT EXISTS payments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), invoice_id uuid NOT NULL REFERENCES invoices(id), amount numeric(12,2) NOT NULL, method varchar(40) NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_date date`;
+  await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS notes text`;
   await sql`CREATE TABLE IF NOT EXISTS expenses (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), title varchar(160) NOT NULL, category varchar(80) NOT NULL, amount numeric(12,2) NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
   await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS expense_date date`;
   await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method varchar(40)`;

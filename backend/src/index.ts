@@ -33,7 +33,7 @@ const clientInput = z.object({ name: z.string().min(2), company: z.string().max(
 const quotationInput = z.object({ clientId: z.string().uuid().optional(), clientName: z.string().min(2).max(160), amount: z.number().positive(), validUntil: z.string().date(), status: z.enum(["Draft", "Sent", "Accepted"]).default("Draft") });
 const invoiceInput = z.object({ invoiceNumber: z.string().min(3).max(32), clientId: z.string().min(1), clientName: z.string().min(1).max(160).optional(), total: z.number().positive(), paidAmount: z.number().min(0).optional(), dueDate: z.string().datetime() });
 const expenseInput = z.object({ title: z.string().min(2).max(160), category: z.string().min(2).max(80), amount: z.number().positive(), expenseDate: z.string().date().optional(), paymentMethod: z.string().min(2).max(40).optional(), description: z.string().max(2000).optional() });
-const paymentInput = z.object({ invoiceId: z.string().uuid(), amount: z.number().positive(), method: z.string().min(2).max(40) });
+const paymentInput = z.object({ invoiceId: z.string().uuid(), amount: z.number().positive(), method: z.enum(["Cash", "UPI", "Bank Transfer", "Cheque"]), paymentDate: z.string().date().optional(), notes: z.string().max(2000).optional() });
 const developerInput = z.object({ name: z.string().min(2).max(120), email: z.string().email(), password: z.string().min(8) });
 const projectStatus = z.enum(["NEW", "PENDING", "IN_PROGRESS", "COMPLETED"]);
 const projectInput = z.object({ name: z.string().min(2).max(160), clientName: z.string().max(160).optional(), description: z.string().max(5000).optional(), priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"), status: projectStatus.default("NEW"), dueDate: z.string().date().optional(), assignedDeveloperId: z.string().uuid() });
@@ -184,7 +184,23 @@ app.post("/api/invoices", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async 
 app.get("/api/expenses", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (_request, response) => { const rows = await sql`SELECT * FROM expenses ORDER BY expense_date DESC NULLS LAST, created_at DESC`; response.json({ data: rows }); });
 app.post("/api/expenses", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => { const parsed = expenseInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid expense", errors: parsed.error.flatten() }); return; } const data = parsed.data; const rows = await sql`INSERT INTO expenses (title, category, amount, expense_date, payment_method, description) VALUES (${data.title}, ${data.category}, ${data.amount}, ${data.expenseDate ?? null}, ${data.paymentMethod ?? null}, ${data.description ?? null}) RETURNING *`; response.status(201).json({ data: rows[0] }); });
 app.get("/api/payments", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (_request, response) => { const rows = await sql`SELECT payments.*, invoices.invoice_number FROM payments JOIN invoices ON invoices.id = payments.invoice_id ORDER BY payments.created_at DESC`; response.json({ data: rows }); });
-app.post("/api/payments", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request, response) => { const parsed = paymentInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid payment", errors: parsed.error.flatten() }); return; } const data = parsed.data; const invoice = await sql`SELECT id FROM invoices WHERE id = ${data.invoiceId} LIMIT 1`; if (!invoice[0]) { response.status(404).json({ message: "Invoice not found" }); return; } const rows = await sql`INSERT INTO payments (invoice_id, amount, method) VALUES (${data.invoiceId}, ${data.amount}, ${data.method}) RETURNING *`; await sql`UPDATE invoices SET paid_amount = paid_amount + ${data.amount} WHERE id = ${data.invoiceId}`; response.status(201).json({ data: rows[0] }); });
+app.get("/api/payments/summary", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (_request, response) => {
+  const rows = await sql`SELECT i.id AS invoice_id, i.invoice_number, i.total AS invoice_total, c.name AS client_name, c.company AS client_company, i.due_date, COALESCE(SUM(p.amount), 0) AS total_paid, MAX(COALESCE(p.payment_date, p.created_at::date)) AS latest_payment_date, (SELECT method FROM payments WHERE invoice_id = i.id ORDER BY COALESCE(payment_date, created_at::date) DESC, created_at DESC LIMIT 1) AS payment_method FROM invoices i JOIN clients c ON c.id = i.client_id LEFT JOIN payments p ON p.invoice_id = i.id GROUP BY i.id, i.invoice_number, i.total, c.name, c.company, i.due_date ORDER BY i.created_at DESC`;
+  response.json({ data: rows });
+});
+app.post("/api/payments", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request, response) => {
+  const parsed = paymentInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Invalid payment", errors: parsed.error.flatten() }); return; }
+  const data = parsed.data;
+  const invoice = await sql`SELECT id, total FROM invoices WHERE id = ${data.invoiceId} LIMIT 1`;
+  if (!invoice[0]) { response.status(404).json({ message: "Invoice not found" }); return; }
+  const paidRows = await sql`SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE invoice_id = ${data.invoiceId}`;
+  const alreadyPaid = Number(paidRows[0]?.total_paid ?? 0); const remaining = Number(invoice[0].total) - alreadyPaid;
+  if (data.amount > remaining) { response.status(400).json({ message: `Payment exceeds the remaining balance of ${remaining.toFixed(2)}.` }); return; }
+  const rows = await sql`INSERT INTO payments (invoice_id, amount, method, payment_date, notes) VALUES (${data.invoiceId}, ${data.amount}, ${data.method}, ${data.paymentDate ?? null}, ${data.notes ?? null}) RETURNING *`;
+  await sql`UPDATE invoices SET paid_amount = ${alreadyPaid + data.amount} WHERE id = ${data.invoiceId}`;
+  response.status(201).json({ data: rows[0] });
+});
 app.get("/api/developers", requireAuth, allow("SUPER_ADMIN"), async (_request, response) => {
   try {
   const rows = await sql`
