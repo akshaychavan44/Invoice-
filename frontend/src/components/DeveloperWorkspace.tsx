@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { BriefcaseBusiness, CalendarDays, Code2, FolderKanban, Plus, RefreshCw, Send, Settings, Trash2, Users } from "lucide-react";
+import { ArrowUpRight, BriefcaseBusiness, CalendarDays, CheckCircle2, Clock3, Code2, FolderKanban, Plus, RefreshCw, Send, Settings, Trash2, Users } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import AccountSettingsPanel from "./AccountSettingsPanel";
 
@@ -163,22 +163,27 @@ export default function DeveloperWorkspace({ admin = false, onLogout }: { admin?
   const input = "mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10";
   const visibleProjects = projects.filter(project => (!activeDeveloperId || project.assigned_developer_id === activeDeveloperId) && (projectStatusFilter === "ALL" || project.status === projectStatusFilter));
   const selectDeveloper = (developerId: string | null) => { setActiveDeveloperId(developerId); setSelected(null); setUpdates([]); };
+  const activeProjects = projects.filter(project => project.status === "IN_PROGRESS").length;
+  const completedProjects = projects.filter(project => project.status === "COMPLETED").length;
+  const averageProgress = projects.length ? Math.round(projects.reduce((total, project) => total + Number(project.progress ?? (project.status === "COMPLETED" ? 100 : 0)), 0) / projects.length) : 0;
 
-  return <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: "easeOut" }} className="mx-auto max-w-7xl space-y-6 p-4 lg:p-6">
-    <div className="rounded-3xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950 via-[#121936] to-cyan-950 p-6 text-white shadow-xl">
+  return <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: "easeOut" }} className="developer-workspace mx-auto max-w-7xl space-y-6 p-4 lg:p-6">
+    <div className="developer-workspace__hero relative overflow-hidden rounded-3xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950 via-[#121936] to-cyan-950 p-6 text-white shadow-xl lg:p-8">
+      <div className="developer-workspace__orb developer-workspace__orb--one"/><div className="developer-workspace__orb developer-workspace__orb--two"/>
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-sm text-indigo-200"><Code2 size={16}/> Product delivery workspace</div>
-          <h1 className="text-3xl font-semibold tracking-tight">{admin ? "Developer Delivery Hub" : "My Project Workspace"}</h1>
-          <p className="mt-2 text-sm text-slate-300">{admin ? "Create developer access, assign work, and monitor delivery." : "Keep project updates, progress and delivery notes in one place."}</p>
+        <div className="relative z-10">
+          <div className="mb-3 flex items-center gap-2 text-sm text-indigo-200"><span className="developer-workspace__hero-icon"><Code2 size={15}/></span> Product delivery workspace</div>
+          <h1 className="text-3xl font-semibold tracking-tight lg:text-4xl">{admin ? "Developer Delivery Hub" : "My Project Workspace"}</h1>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{admin ? "Create developer access, assign work, and monitor delivery from one clear command center." : "Keep project updates, progress and delivery notes in one focused place."}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="rounded-2xl bg-white/10 px-4 py-3 text-center"><div className="text-xl font-semibold">{projects.length}</div><div className="text-xs text-slate-300">{admin ? "projects" : "assigned"}</div></div>
-          {admin && <div className="rounded-2xl bg-white/10 px-4 py-3 text-center"><div className="text-xl font-semibold">{developers.length}</div><div className="text-xs text-slate-300">developers</div></div>}
-          <button aria-label="Refresh workspace" onClick={() => void load()} className="rounded-xl bg-white/10 p-3 transition hover:bg-white/20" title="Refresh workspace"><RefreshCw size={17} className={loading ? "animate-spin" : ""}/></button>
+        <div className="relative z-10 flex items-center gap-3">
+          <div className="developer-workspace__hero-stat rounded-2xl bg-white/10 px-4 py-3 text-center"><div className="text-xl font-semibold">{projects.length}</div><div className="text-xs text-slate-300">{admin ? "projects" : "assigned"}</div></div>
+          {admin && <div className="developer-workspace__hero-stat rounded-2xl bg-white/10 px-4 py-3 text-center"><div className="text-xl font-semibold">{developers.length}</div><div className="text-xs text-slate-300">developers</div></div>}
+          <button aria-label="Refresh workspace" onClick={() => void load()} className="developer-workspace__icon-button rounded-xl bg-white/10 p-3 transition hover:bg-white/20" title="Refresh workspace"><RefreshCw size={17} className={loading ? "animate-spin" : ""}/></button>
           {onLogout && <button onClick={() => setShowSettings(current => !current)} className="flex items-center gap-2 rounded-xl border border-white/20 px-3 py-2.5 text-sm font-semibold transition hover:bg-white/10"><Settings size={15}/>Settings</button>}
         </div>
       </div>
+      <div className="relative z-10 mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="developer-workspace__metric"><BriefcaseBusiness size={15}/><span><b>{projects.length}</b> total projects</span></div><div className="developer-workspace__metric"><Clock3 size={15}/><span><b>{activeProjects}</b> in progress</span></div><div className="developer-workspace__metric"><CheckCircle2 size={15}/><span><b>{completedProjects}</b> completed</span></div><div className="developer-workspace__metric"><ArrowUpRight size={15}/><span><b>{averageProgress}%</b> average progress</span></div></div>
     </div>
     {notice && <div role="status" className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">{notice}</div>}
     {showSettings && onLogout && <AccountSettingsPanel onLogout={onLogout}/>} 

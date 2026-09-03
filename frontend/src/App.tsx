@@ -44,7 +44,7 @@ interface InvoiceItem { id: string; name: string; hsn: string; qty: number; unit
 interface Invoice {
   id: string; number: string; clientId: string; clientName: string; date: string; dueDate: string;
   placeOfSupply: string; items: InvoiceItem[]; subtotal: number; total: number; gstTotal: number;
-  cgst: number; sgst: number; igst: number; status: "Draft" | "Sent" | "Paid" | "Overdue"; amountPaid: number;
+  cgst: number; sgst: number; igst: number; status: "Draft" | "Sent" | "Paid" | "Overdue"; amountPaid: number; createdByName?: string | null;
 }
 interface Client { id: string; businessName: string; name: string; gstin: string; email: string; phone: string; address: string; state: string; creditLimit: number; }
 interface Quotation { id: string; clientName: string; amount: number; validUntil: string; status: string; }
@@ -73,8 +73,8 @@ type ApiQuotation = { quotation_number: string; client_name: string; amount: str
 const toQuotation = (quotation: ApiQuotation): Quotation => ({ id: quotation.quotation_number, clientName: quotation.client_name, amount: Number(quotation.amount), validUntil: quotation.valid_until.slice(0, 10), status: quotation.status });
 type ApiNotification = { id:string; title:string; message:string; is_read:boolean; created_at:string };
 const toNotification = (notification: ApiNotification) => ({ id:notification.id, text:`${notification.title}: ${notification.message}`, time:new Date(notification.created_at).toLocaleString(), unread:!notification.is_read });
-type ApiInvoice = { id: string; invoice_number: string; client_id: string; client_name: string; total: string | number; paid_amount: string | number; due_date: string; created_at: string };
-const toInvoice = (invoice: ApiInvoice): Invoice => ({ id: invoice.id, number: invoice.invoice_number, clientId: invoice.client_id, clientName: invoice.client_name, date: invoice.created_at.slice(0, 10), dueDate: invoice.due_date.slice(0, 10), placeOfSupply: "27-Maharashtra", items: [], subtotal: Number(invoice.total), total: Number(invoice.total), gstTotal: 0, cgst: 0, sgst: 0, igst: 0, status: Number(invoice.paid_amount) >= Number(invoice.total) ? "Paid" : "Sent", amountPaid: Number(invoice.paid_amount) });
+type ApiInvoice = { id: string; invoice_number: string; client_id: string; client_name: string; total: string | number; paid_amount: string | number; due_date: string; created_at: string; created_by_name?: string | null };
+const toInvoice = (invoice: ApiInvoice): Invoice => ({ id: invoice.id, number: invoice.invoice_number, clientId: invoice.client_id, clientName: invoice.client_name, date: invoice.created_at.slice(0, 10), dueDate: invoice.due_date.slice(0, 10), placeOfSupply: "27-Maharashtra", items: [], subtotal: Number(invoice.total), total: Number(invoice.total), gstTotal: 0, cgst: 0, sgst: 0, igst: 0, status: Number(invoice.paid_amount) >= Number(invoice.total) ? "Paid" : "Sent", amountPaid: Number(invoice.paid_amount), createdByName: invoice.created_by_name });
 type FinanceExpense = { id: string; title: string; category: string; amount: string | number; expense_date: string | null; payment_method: string | null };
 type FinancePayment = { id: string; invoice_number: string; amount: string | number; method: string; created_at: string };
 
@@ -477,7 +477,7 @@ useEffect(()=>{ localStorage.setItem("zootechx_theme", isDark?"dark":"light"); }
       const response = await apiFetch("/api/invoices", { method: "POST", body: JSON.stringify({ invoiceNumber: inv.number, clientId: inv.clientId, clientName: inv.clientName, total: inv.total, paidAmount: inv.amountPaid, dueDate: new Date(inv.dueDate).toISOString() }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Unable to save invoice");
-      setInvoices([{ ...inv, id: data.data.id }, ...invoices]);
+      setInvoices([{ ...inv, id: data.data.id, createdByName: data.data.created_by_name ?? null }, ...invoices]);
     } catch (error) {
       if (error instanceof Error && error.message === "Choose a client before saving an invoice") {
         setNotifications([{ id: Date.now().toString(), text: error.message, time: "Just now", unread: true }, ...notifications]);
@@ -876,7 +876,7 @@ if (userRole === "SUB_ADMIN") {
               <div className={`rounded-2xl border overflow-hidden ${bgCard}`}>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[800px]">
-                    <thead className={`${isDark?"bg-[#0f0f1a]":"bg-slate-50"} border-b ${borderC} text-[11px] ${textMuted} uppercase tracking-widest`}><tr><th className="text-left p-3">Invoice No</th><th className="text-left p-3">Client</th><th className="text-left p-3">Date</th><th className="text-left p-3">Amount</th><th className="text-left p-3">GST</th><th className="text-left p-3">Status</th><th className="text-left p-3">Actions</th></tr></thead>
+                    <thead className={`${isDark?"bg-[#0f0f1a]":"bg-slate-50"} border-b ${borderC} text-[11px] ${textMuted} uppercase tracking-widest`}><tr><th className="text-left p-3">Invoice No</th><th className="text-left p-3">Client</th><th className="text-left p-3">Date</th><th className="text-left p-3">Amount</th><th className="text-left p-3">GST</th><th className="text-left p-3">Status</th>{userRole === "SUPER_ADMIN" && <th className="text-left p-3">Created By</th>}<th className="text-left p-3">Actions</th></tr></thead>
                     <tbody className={`divide-y ${borderC}`}>
                       {invoices.map(inv=> (
                         <tr key={inv.id} className={`hover:${isDark?"bg-[#1a1a2e]":"bg-slate-50"}`}>
@@ -885,7 +885,7 @@ if (userRole === "SUB_ADMIN") {
                           <td className="p-3 text-[12px]">{inv.date}</td>
                           <td className="p-3 text-[13px] font-semibold">₹{inv.total.toLocaleString()}</td>
                           <td className="p-3 text-[12px]">₹{inv.gstTotal.toLocaleString()}</td>
-                          <td className="p-3"><span className={`text-[11px] px-2 py-1 rounded-full border ${inv.status==="Paid"?"bg-emerald-500/10 text-emerald-600 border-emerald-500/20": inv.status==="Sent"?"bg-blue-500/10 text-blue-600 border-blue-500/20": inv.status==="Overdue"?"bg-red-500/10 text-red-600 border-red-500/20":"bg-slate-500/10 text-slate-600"}`}>{inv.status}</span></td>
+                          <td className="p-3"><span className={`text-[11px] px-2 py-1 rounded-full border ${inv.status==="Paid"?"bg-emerald-500/10 text-emerald-600 border-emerald-500/20": inv.status==="Sent"?"bg-blue-500/10 text-blue-600 border-blue-500/20": inv.status==="Overdue"?"bg-red-500/10 text-red-600 border-red-500/20":"bg-slate-500/10 text-slate-600"}`}>{inv.status}</span></td>{userRole === "SUPER_ADMIN" && <td className="p-3 text-[13px]">{inv.createdByName || "—"}</td>}
                           <td className="p-3 flex gap-1"><button onClick={()=> setPreviewInvoice(inv)} className={`h-7 w-7 rounded-lg border flex items-center justify-center ${bgCard}`}><Eye size={14}/></button><button onClick={()=> { setNewInvoice({...inv, items:inv.items}); setCurrentPage("invoices/new"); }} className={`h-7 w-7 rounded-lg border flex items-center justify-center ${bgCard}`}><Edit3 size={14}/></button></td>
                         </tr>
                       ))}
@@ -1045,7 +1045,7 @@ if (userRole === "SUB_ADMIN") {
 
           {currentPage==="developers" && <DeveloperWorkspace admin />}
 
-          {currentPage === "payments" && <PaymentsPage><PaymentsWorkspace dark={isDark}/></PaymentsPage>}
+          {currentPage === "payments" && <PaymentsPage><PaymentsWorkspace dark={isDark} role={userRole}/></PaymentsPage>}
           {currentPage === "expenses" && <ExpensesPage><div className="max-w-[1000px] mx-auto"><h1 className="text-[22px] font-bold mb-5">Expenses</h1><div className={`rounded-2xl border overflow-hidden ${bgCard}`}><table className="w-full text-sm"><thead className={`${isDark?"bg-[#0f0f1a]":"bg-slate-50"}`}><tr><th className="p-3 text-left">Expense</th><th className="p-3 text-left">Category</th><th className="p-3 text-left">Method</th><th className="p-3 text-right">Amount</th></tr></thead><tbody>{expenses.map(expense => <tr key={expense.id} className={`border-t ${borderC}`}><td className="p-3">{expense.title}</td><td className="p-3">{expense.category}</td><td className="p-3">{expense.payment_method || "—"}</td><td className="p-3 text-right font-semibold">₹{Number(expense.amount).toLocaleString()}</td></tr>)}{expenses.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-500">No expenses recorded yet.</td></tr>}</tbody></table></div></div></ExpensesPage>}
           {currentPage === "settings" && (
             <SettingsPage>

@@ -20,9 +20,13 @@ async function migrate(): Promise<void> {
   await sql`CREATE TABLE IF NOT EXISTS followups (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), lead_id text, lead_name varchar(160) NOT NULL, company varchar(160), property text, type varchar(40) NOT NULL, followup_date date NOT NULL, followup_time varchar(32), assigned_to varchar(120), priority varchar(20), status varchar(30) NOT NULL DEFAULT 'Scheduled', notes text, created_at timestamptz NOT NULL DEFAULT now())`;
   await sql`ALTER TABLE followups ADD COLUMN IF NOT EXISTS completed_at timestamptz`;
   await sql`ALTER TABLE followups ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`;
-  await sql`CREATE TABLE IF NOT EXISTS invoices (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), invoice_number varchar(32) NOT NULL UNIQUE, client_id uuid NOT NULL REFERENCES clients(id), total numeric(12,2) NOT NULL, paid_amount numeric(12,2) NOT NULL DEFAULT 0, due_date timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`CREATE TABLE IF NOT EXISTS invoices (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), invoice_number varchar(32) NOT NULL UNIQUE, client_id uuid NOT NULL REFERENCES clients(id), total numeric(12,2) NOT NULL, paid_amount numeric(12,2) NOT NULL DEFAULT 0, due_date timestamptz NOT NULL, created_by_id uuid REFERENCES users(id), created_by_name varchar(120), created_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_by_id uuid REFERENCES users(id)`;
+  await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_by_name varchar(120)`;
   await sql`CREATE TABLE IF NOT EXISTS quotations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), quotation_number varchar(40) NOT NULL UNIQUE, client_id uuid REFERENCES clients(id), client_name varchar(160) NOT NULL, amount numeric(12,2) NOT NULL CHECK (amount > 0), valid_until date NOT NULL, status varchar(20) NOT NULL DEFAULT 'Draft', created_at timestamptz NOT NULL DEFAULT now())`;
-  await sql`CREATE TABLE IF NOT EXISTS payments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), invoice_id uuid NOT NULL REFERENCES invoices(id), amount numeric(12,2) NOT NULL, method varchar(40) NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`CREATE TABLE IF NOT EXISTS payments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), invoice_id uuid NOT NULL REFERENCES invoices(id), amount numeric(12,2) NOT NULL, method varchar(40) NOT NULL, created_by_id uuid REFERENCES users(id), created_by_name varchar(120), created_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS created_by_id uuid REFERENCES users(id)`;
+  await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS created_by_name varchar(120)`;
   await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_date date`;
   await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS notes text`;
   await sql`CREATE TABLE IF NOT EXISTS expenses (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), title varchar(160) NOT NULL, category varchar(80) NOT NULL, amount numeric(12,2) NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
