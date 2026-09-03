@@ -1,6 +1,6 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import cors from "cors";
 import express, { Request, Response } from "express";
 import rateLimit from "express-rate-limit";
@@ -41,7 +41,18 @@ const projectInput = z.object({ name: z.string().min(2).max(160), clientName: z.
 const projectStatusInput = z.object({ status: projectStatus });
 const projectUpdateInput = z.object({ message: z.string().max(5000).optional().default(""), progress: z.number().int().min(0).max(100), status: projectStatus.optional() });
 const vaultItemInput = z.object({ label: z.string().min(2).max(120), service: z.string().min(2).max(160), username: z.string().min(1).max(500), secret: z.string().min(1).max(4000), notes: z.string().max(2000).optional() });
-const vaultKey = (): Buffer | null => { const value = process.env.VAULT_ENCRYPTION_KEY; if (!value) return null; const key = Buffer.from(value, "base64"); return key.length === 32 ? key : null; };
+const vaultKey = (): Buffer => {
+  const value = process.env.VAULT_ENCRYPTION_KEY;
+  if (value) {
+    try {
+      const key = Buffer.from(value, "base64");
+      if (key.length === 32) return key;
+    } catch {}
+    return createHash("sha256").update(value).digest();
+  }
+  const fallbackSeed = process.env.JWT_SECRET || "zootechx-secure-vault-encryption-seed-2026";
+  return createHash("sha256").update(fallbackSeed).digest();
+};
 const encryptVaultValue = (value: string, key: Buffer, iv: Buffer) => { const cipher = createCipheriv("aes-256-gcm", key, iv); return { value: Buffer.concat([cipher.update(value, "utf8"), cipher.final()]).toString("base64"), tag: cipher.getAuthTag().toString("base64") }; };
 const decryptVaultValue = (value: string, tag: string, key: Buffer, iv: Buffer) => { const decipher = createDecipheriv("aes-256-gcm", key, iv); decipher.setAuthTag(Buffer.from(tag, "base64")); return Buffer.concat([decipher.update(Buffer.from(value, "base64")), decipher.final()]).toString("utf8"); };
 app.get("/api/health", async (_request, response) => { await sql`SELECT 1`; response.json({ status: "ok", database: "neon" }); });

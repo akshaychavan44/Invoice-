@@ -1,14 +1,58 @@
 import React, { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
-import { ArrowUpRight, BriefcaseBusiness, CalendarDays, CheckCircle2, Clock3, Code2, FolderKanban, Plus, RefreshCw, Send, Settings, Trash2, Users } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Code2, FolderKanban, Users, Plus, RefreshCw,
+  Send, Trash2, CalendarDays, ExternalLink, ShieldCheck, CheckCircle2,
+  Clock, AlertCircle, ChevronRight, X, ArrowLeft, ArrowUpRight, LogOut, Sun, Moon
+} from "lucide-react";
 import { apiFetch } from "../lib/api";
-import AccountSettingsPanel from "./AccountSettingsPanel";
 
-type Developer = { id: string; name: string; email: string; assigned_projects?: number; completed_projects?: number; active_projects?: number; average_progress?: number | string; last_activity_at?: string | null };
-type Project = { id: string; name: string; client_name: string | null; description: string | null; status: string; priority: string; due_date: string | null; progress?: number | string; assigned_developer_id: string; developer_name?: string };
-type Update = { id: string; message: string; progress: number; author_name?: string; created_at: string };
+type Developer = {
+  id: string;
+  name: string;
+  email: string;
+  assigned_projects?: number;
+  completed_projects?: number;
+  active_projects?: number;
+  average_progress?: number | string;
+  last_activity_at?: string | null;
+};
 
-export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: { admin?: boolean; onLogout?: () => void; onBack?: () => void }) {
+type Project = {
+  id: string;
+  name: string;
+  client_name: string | null;
+  description: string | null;
+  status: string;
+  priority: string;
+  due_date: string | null;
+  progress?: number | string;
+  assigned_developer_id: string;
+  developer_name?: string;
+};
+
+type Update = {
+  id: string;
+  message: string;
+  progress: number;
+  author_name?: string;
+  created_at: string;
+};
+
+export default function DeveloperWorkspace({
+  admin = false,
+  onLogout,
+  onBack,
+  dark: propDark,
+  onToggleTheme,
+}: {
+  admin?: boolean;
+  onLogout?: () => void;
+  onBack?: () => void;
+  dark?: boolean;
+  onToggleTheme?: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<"projects" | "team" | "assign">("projects");
   const [developers, setDevelopers] = useState<Developer[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeDeveloperId, setActiveDeveloperId] = useState<string | null>(null);
@@ -18,12 +62,59 @@ export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: 
   const [message, setMessage] = useState("");
   const [progress, setProgress] = useState(0);
   const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 3000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<"" | "developer" | "project" | "update">("");
   const [removingDeveloper, setRemovingDeveloper] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showCreateDevModal, setShowCreateDevModal] = useState(false);
+  const [dark, setDark] = useState<boolean>(() => {
+    if (propDark !== undefined) return propDark;
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("zootechx_theme");
+      if (saved) return saved === "dark";
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    if (propDark !== undefined) {
+      setDark(propDark);
+    }
+  }, [propDark]);
+
+  const handleToggleTheme = () => {
+    const nextDark = !dark;
+    setDark(nextDark);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("zootechx_theme", nextDark ? "dark" : "light");
+      if (nextDark) {
+        document.documentElement.classList.add("dark");
+        document.documentElement.classList.remove("light");
+      } else {
+        document.documentElement.classList.remove("dark");
+        document.documentElement.classList.add("light");
+      }
+    }
+    if (onToggleTheme) {
+      onToggleTheme();
+    }
+  };
+
+  // Forms
   const [developerForm, setDeveloperForm] = useState({ name: "", email: "", password: "" });
-  const [projectForm, setProjectForm] = useState({ name: "", clientName: "", description: "", priority: "MEDIUM", dueDate: "", assignedDeveloperId: "" });
+  const [projectForm, setProjectForm] = useState({
+    name: "",
+    clientName: "",
+    description: "",
+    priority: "MEDIUM",
+    dueDate: "",
+    assignedDeveloperId: "",
+  });
   const dueDateRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
@@ -33,6 +124,7 @@ export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: 
       const projectData = await projectResponse.json();
       if (!projectResponse.ok) throw new Error(projectData.message || "Unable to load projects");
       setProjects(projectData.data ?? []);
+
       if (admin) {
         const developerResponse = await apiFetch("/api/developers");
         const developerData = await developerResponse.json();
@@ -40,7 +132,7 @@ export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: 
         setDevelopers(developerData.data ?? []);
       }
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Unable to reach the project service. Start the backend, then retry.");
+      setNotice(error instanceof Error ? error.message : "Unable to reach the project service.");
     } finally {
       setLoading(false);
     }
@@ -49,7 +141,7 @@ export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: 
   useEffect(() => {
     void load();
     if (!admin) return;
-    const refreshId = window.setInterval(() => void load(), 10000);
+    const refreshId = window.setInterval(() => void load(), 12000);
     return () => window.clearInterval(refreshId);
   }, [admin]);
 
@@ -67,19 +159,24 @@ export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: 
     }
   };
 
-  const createDeveloper = async () => {
+  const createDeveloper = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!developerForm.name.trim() || !developerForm.email.trim() || developerForm.password.length < 8) {
-      setNotice("Enter a name, email, and temporary password with at least 8 characters.");
+      setNotice("Enter a name, email, and password with at least 8 characters.");
       return;
     }
     setSaving("developer");
     try {
-      const response = await apiFetch("/api/developers", { method: "POST", body: JSON.stringify(developerForm) });
+      const response = await apiFetch("/api/developers", {
+        method: "POST",
+        body: JSON.stringify(developerForm),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message);
-      setDevelopers(current => [data.data, ...current]);
+      setDevelopers((current) => [data.data, ...current]);
       setDeveloperForm({ name: "", email: "", password: "" });
-      setNotice("Developer account created. Share the temporary password securely.");
+      setShowCreateDevModal(false);
+      setNotice("Developer account created successfully.");
       void load();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to create developer");
@@ -88,19 +185,31 @@ export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: 
     }
   };
 
-  const createProject = async () => {
+  const createProject = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!projectForm.name.trim() || !projectForm.assignedDeveloperId) {
-      setNotice("Enter a project name and select the responsible developer.");
+      setNotice("Enter a project name and select an assigned developer.");
       return;
     }
     setSaving("project");
     try {
-      const response = await apiFetch("/api/projects", { method: "POST", body: JSON.stringify(projectForm) });
+      const response = await apiFetch("/api/projects", {
+        method: "POST",
+        body: JSON.stringify(projectForm),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message);
-      setProjects(current => [data.data, ...current]);
-      setProjectForm({ name: "", clientName: "", description: "", priority: "MEDIUM", dueDate: "", assignedDeveloperId: "" });
-      setNotice("Project assigned successfully and saved to the delivery workspace.");
+      setProjects((current) => [data.data, ...current]);
+      setProjectForm({
+        name: "",
+        clientName: "",
+        description: "",
+        priority: "MEDIUM",
+        dueDate: "",
+        assignedDeveloperId: "",
+      });
+      setNotice("Project assigned successfully.");
+      setActiveTab("projects");
       void load();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to assign project");
@@ -110,17 +219,21 @@ export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: 
   };
 
   const addUpdate = async () => {
-    if (!selected) {
-      setNotice("Select a project before saving it.");
-      return;
-    }
+    if (!selected) return;
     setSaving("update");
     try {
-      const response = await apiFetch(`/api/projects/${selected.id}/updates`, { method: "POST", body: JSON.stringify({ message, progress, status:selected.status }) });
+      const response = await apiFetch(`/api/projects/${selected.id}/updates`, {
+        method: "POST",
+        body: JSON.stringify({ message, progress, status: selected.status }),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message);
-      setUpdates(current => [data.data, ...current]);
-      if (data.project) { const next = { ...selected, status:data.project.status, progress:data.project.progress }; setSelected(next); setProjects(current => current.map(project => project.id === next.id ? { ...project, ...next } : project)); }
+      setUpdates((current) => [data.data, ...current]);
+      if (data.project) {
+        const next = { ...selected, status: data.project.status, progress: data.project.progress };
+        setSelected(next);
+        setProjects((current) => current.map((p) => (p.id === next.id ? { ...p, ...next } : p)));
+      }
       setMessage("");
       setNotice("Progress update saved.");
       void load();
@@ -133,106 +246,823 @@ export default function DeveloperWorkspace({ admin = false, onLogout, onBack }: 
 
   const removeDeveloper = async () => {
     if (!activeDeveloperId) return;
-    const developer = developers.find(item => item.id === activeDeveloperId);
-    if (!developer || !window.confirm(`Remove ${developer.name}'s developer login? Developers with assigned projects must be reassigned first.`)) return;
+    const developer = developers.find((item) => item.id === activeDeveloperId);
+    if (!developer || !window.confirm(`Remove ${developer.name}'s developer login?`)) return;
     setRemovingDeveloper(true);
     try {
       const response = await apiFetch(`/api/developers/${developer.id}`, { method: "DELETE" });
-      if (!response.ok) { const data = await response.json(); throw new Error(data.message || "Unable to remove developer"); }
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "Unable to remove developer");
+      }
       setNotice("Developer account removed.");
-      selectDeveloper(null);
+      setActiveDeveloperId(null);
       void load();
-    } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to remove developer"); }
-    finally { setRemovingDeveloper(false); }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to remove developer");
+    } finally {
+      setRemovingDeveloper(false);
+    }
   };
 
   const updateProjectStatus = async (status: string) => {
     if (!selected) return;
     setSaving("update");
     try {
-      const response = await apiFetch(`/api/projects/${selected.id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+      const response = await apiFetch(`/api/projects/${selected.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Unable to update project status");
       const next = { ...selected, ...data.data, progress: selected.progress };
-      setSelected(next); setProjects(current => current.map(project => project.id === next.id ? { ...project, ...next } : project));
-      setNotice(`Project status changed to ${status.replace("_", " ")}.`);
-    } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to update project status"); }
-    finally { setSaving(""); }
+      setSelected(next);
+      setProjects((current) => current.map((p) => (p.id === next.id ? { ...p, ...next } : p)));
+      setNotice(`Project status updated to ${status.replace("_", " ")}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to update status");
+    } finally {
+      setSaving("");
+    }
   };
 
-  const input = "mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10";
-  const visibleProjects = projects.filter(project => (!activeDeveloperId || project.assigned_developer_id === activeDeveloperId) && (projectStatusFilter === "ALL" || project.status === projectStatusFilter));
-  const selectDeveloper = (developerId: string | null) => { setActiveDeveloperId(developerId); setSelected(null); setUpdates([]); };
-  const activeProjects = projects.filter(project => project.status === "IN_PROGRESS").length;
-  const completedProjects = projects.filter(project => project.status === "COMPLETED").length;
-  const averageProgress = projects.length ? Math.round(projects.reduce((total, project) => total + Number(project.progress ?? (project.status === "COMPLETED" ? 100 : 0)), 0) / projects.length) : 0;
+  const visibleProjects = projects.filter(
+    (project) =>
+      (!activeDeveloperId || project.assigned_developer_id === activeDeveloperId) &&
+      (projectStatusFilter === "ALL" || project.status === projectStatusFilter)
+  );
 
-  return <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: "easeOut" }} className={`developer-workspace ${onBack ? "developer-workspace--standalone" : ""} mx-auto max-w-7xl space-y-6 p-4 lg:p-6`}>
-    <div className="developer-workspace__hero relative overflow-hidden rounded-3xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950 via-[#121936] to-cyan-950 p-6 text-white shadow-xl lg:p-8">
-      <div className="developer-workspace__orb developer-workspace__orb--one"/><div className="developer-workspace__orb developer-workspace__orb--two"/>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="relative z-10">
-          <div className="mb-3 flex items-center gap-2 text-sm text-indigo-200"><span className="developer-workspace__hero-icon"><Code2 size={15}/></span> Product delivery workspace</div>
-          <h1 className="text-3xl font-semibold tracking-tight lg:text-4xl">{admin ? "Developer Delivery Hub" : "My Project Workspace"}</h1>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{admin ? "Create developer access, assign work, and monitor delivery from one clear command center." : "Keep project updates, progress and delivery notes in one focused place."}</p>
+  const activeProjects = projects.filter((p) => p.status === "IN_PROGRESS").length;
+  const completedProjects = projects.filter((p) => p.status === "COMPLETED").length;
+  const averageProgress = projects.length
+    ? Math.round(
+        projects.reduce(
+          (sum, p) => sum + Number(p.progress ?? (p.status === "COMPLETED" ? 100 : 0)),
+          0
+        ) / projects.length
+      )
+    : 0;
+
+  // Colors
+  const bgMain = dark ? "bg-[#090d16] text-[#f1f5f9]" : "bg-slate-50 text-slate-900";
+  const bgSidebar = dark ? "bg-[#101422] border-white/10" : "bg-white border-slate-200";
+  const bgCard = dark ? "bg-[#141828]/90 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900";
+  const inputBg = dark ? "bg-[#1c2236] border-white/10 text-white placeholder-slate-400" : "bg-white border-slate-200 text-slate-900 placeholder-slate-400";
+  const mutedText = dark ? "text-slate-400" : "text-slate-500";
+
+  type NavItem = {
+    id: "projects" | "team" | "assign";
+    label: string;
+    icon: React.ComponentType<any>;
+    badge?: number;
+  };
+
+  const navigationItems: NavItem[] = [
+    { id: "projects", label: admin ? "All Projects" : "My Projects", icon: FolderKanban, badge: projects.length },
+    ...(admin ? [{ id: "team", label: "Team Members", icon: Users, badge: developers.length } as NavItem] : []),
+    ...(admin ? [{ id: "assign", label: "Assign Project", icon: Plus } as NavItem] : []),
+  ];
+
+  return (
+    <div className={`luxury-app ${dark ? "dark-theme" : "light-theme"} h-screen w-full overflow-hidden flex flex-row ${bgMain} font-sans antialiased transition-colors duration-200`}>
+      {/* SIDEBAR NAVIGATION */}
+      <aside className={`w-[260px] shrink-0 hidden md:flex flex-col border-r ${bgSidebar} h-screen z-20`}>
+        {/* Brand Header */}
+        <div className="p-5 border-b border-inherit flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-600 via-violet-600 to-cyan-500 flex items-center justify-center text-white font-bold text-base shadow-lg shadow-indigo-500/25">
+              Z
+            </div>
+            <div>
+              <div className="font-bold text-[14px] leading-tight flex items-center gap-1.5">
+                ZootechX.ai
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+              <div className="text-[11px] text-indigo-400 font-mono font-medium">
+                {admin ? "Engineering Hub" : "Developer Workspace"}
+              </div>
+            </div>
+          </div>
+          {onBack && (
+            <button
+              onClick={onBack}
+              title="Return to portal"
+              className={`p-1.5 rounded-lg border border-inherit transition ${dark ? "text-slate-400 hover:text-white hover:bg-white/5" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"}`}
+            >
+              <ArrowLeft size={16} />
+            </button>
+          )}
         </div>
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="developer-workspace__hero-stat rounded-2xl bg-white/10 px-4 py-3 text-center"><div className="text-xl font-semibold">{projects.length}</div><div className="text-xs text-slate-300">{admin ? "projects" : "assigned"}</div></div>
-          {admin && <div className="developer-workspace__hero-stat rounded-2xl bg-white/10 px-4 py-3 text-center"><div className="text-xl font-semibold">{developers.length}</div><div className="text-xs text-slate-300">developers</div></div>}
-          {onBack && <button onClick={onBack} className="rounded-xl border border-white/20 px-3 py-2.5 text-sm font-semibold transition hover:bg-white/10">Back</button>}
-          <button aria-label="Refresh workspace" onClick={() => void load()} className="developer-workspace__icon-button rounded-xl bg-white/10 p-3 transition hover:bg-white/20" title="Refresh workspace"><RefreshCw size={17} className={loading ? "animate-spin" : ""}/></button>
-          {onLogout && <button onClick={() => setShowSettings(current => !current)} className="flex items-center gap-2 rounded-xl border border-white/20 px-3 py-2.5 text-sm font-semibold transition hover:bg-white/10"><Settings size={15}/>Settings</button>}
+
+        {/* Navigation List */}
+        <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
+          {navigationItems.map((item) => {
+            const active = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id as any);
+                  setSelected(null);
+                }}
+                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-[13px] font-medium transition-all ${
+                  active
+                    ? (dark ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/20" : "bg-slate-900 text-white shadow")
+                    : `${mutedText} ${dark ? "hover:bg-white/5 hover:text-white" : "hover:bg-slate-100 hover:text-slate-900"}`
+                }`}
+              >
+                <item.icon size={18} className={active ? "text-white" : (dark ? "text-slate-400" : "text-slate-500")} />
+                <span className="flex-1 text-left">{item.label}</span>
+                {item.badge !== undefined && (
+                  <span
+                    className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                      active
+                        ? "bg-white/20 text-white"
+                        : (dark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-700")
+                    }`}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Bottom Actions */}
+        <div className="p-4 border-t border-inherit space-y-2">
+          <button
+            onClick={handleToggleTheme}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition ${dark ? "bg-white/5 text-slate-300 hover:bg-white/10" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+          >
+            {dark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-indigo-600" />}
+            <span>{dark ? "Light Mode" : "Dark Mode"}</span>
+          </button>
+
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition"
+            >
+              <LogOut size={15} />
+              <span>Log out</span>
+            </button>
+          )}
         </div>
+      </aside>
+
+      {/* MAIN VIEWPORT */}
+      <div className="flex-1 min-w-0 h-screen flex flex-col overflow-hidden">
+        {/* TOP BAR */}
+        <header className={`h-16 shrink-0 border-b flex items-center justify-between px-6 backdrop-blur-xl ${bgSidebar}`}>
+          <div className="flex items-center gap-3">
+            <h2 className={`text-lg font-bold tracking-tight capitalize ${dark ? "text-white" : "text-slate-900"}`}>
+              {activeTab === "projects"
+                ? "Projects & Tasks"
+                : activeTab === "team"
+                ? "Team Developers"
+                : "Assign Project"}
+            </h2>
+            <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 text-[10px] font-bold text-indigo-400">
+              {admin ? "Super Admin Access" : "Developer Role"}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleToggleTheme}
+              title={dark ? "Switch to light theme" : "Switch to dark theme"}
+              aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
+              className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
+                dark ? "border-white/10 text-amber-400 hover:bg-white/10" : "border-slate-200 text-indigo-600 hover:bg-slate-50"
+              }`}
+            >
+              {dark ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+
+            <button
+              onClick={() => void load()}
+              title="Refresh projects"
+              className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
+                dark ? "border-white/10 text-slate-400 hover:text-white hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              <RefreshCw size={15} className={loading ? "animate-spin text-indigo-400" : ""} />
+            </button>
+
+            {/* Mobile tab buttons */}
+            <div className="flex md:hidden items-center gap-1">
+              {navigationItems.map((it) => (
+                <button
+                  key={it.id}
+                  onClick={() => {
+                    setActiveTab(it.id as any);
+                    setSelected(null);
+                  }}
+                  className={`p-2 rounded-xl border ${
+                    activeTab === it.id
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : (dark ? "border-white/10 text-slate-400 hover:text-white" : "border-slate-200 text-slate-600 hover:bg-slate-100")
+                  }`}
+                >
+                  <it.icon size={16} />
+                </button>
+              ))}
+            </div>
+          </div>
+        </header>
+
+        {/* CONTENT AREA */}
+        <main className={`flex-1 h-full overflow-y-auto p-6 lg:p-8 space-y-6 ${bgMain}`}>
+          {/* NOTICE BANNER */}
+          {notice && (
+            <div className="flex items-center justify-between rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 text-xs font-semibold text-indigo-300">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={15} />
+                <span>{notice}</span>
+              </div>
+              <button onClick={() => setNotice("")} className="opacity-70 hover:opacity-100">
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* TAB 1: PROJECTS */}
+          {activeTab === "projects" && (
+            <div className="space-y-6 max-w-[1600px] mx-auto w-full">
+              {/* TOP STATS CARDS */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { label: "Total Projects", value: projects.length, color: "text-white" },
+                  { label: "Active In Progress", value: activeProjects, color: "text-cyan-400" },
+                  { label: "Completed", value: completedProjects, color: "text-emerald-400" },
+                  { label: "Avg Delivery Rate", value: `${averageProgress}%`, color: "text-indigo-400" },
+                ].map((stat) => (
+                  <div key={stat.label} className={`rounded-3xl border p-4 lg:p-5 ${bgCard} shadow-sm`}>
+                    <div className={`text-[11px] font-semibold uppercase tracking-wider ${mutedText}`}>
+                      {stat.label}
+                    </div>
+                    <div className={`text-2xl lg:text-3xl font-bold mt-1.5 ${stat.color}`}>
+                      {stat.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* FILTERS & SEARCH */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {["ALL", "NEW", "IN_PROGRESS", "COMPLETED"].map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setProjectStatusFilter(st)}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${
+                        projectStatusFilter === st
+                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                          : `${mutedText} border border-inherit hover:bg-white/5`
+                      }`}
+                    >
+                      {st === "ALL" ? "All Projects" : st.replace("_", " ")}
+                    </button>
+                  ))}
+                </div>
+
+                {admin && (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={activeDeveloperId ?? ""}
+                      onChange={(e) => setActiveDeveloperId(e.target.value || null)}
+                      className={`h-9 rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                    >
+                      <option value="">All Developers</option>
+                      {developers.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      onClick={() => setActiveTab("assign")}
+                      className="flex h-9 items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-3.5 text-xs font-semibold text-white shadow hover:opacity-95"
+                    >
+                      <Plus size={14} />
+                      <span>New Project</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* PROJECTS GRID */}
+              {loading && projects.length === 0 ? (
+                <div className={`rounded-3xl border p-12 text-center text-sm ${bgCard}`}>
+                  Loading projects...
+                </div>
+              ) : visibleProjects.length === 0 ? (
+                <div className={`rounded-3xl border border-dashed p-14 text-center ${bgCard}`}>
+                  <FolderKanban size={32} className="mx-auto text-slate-500 opacity-60 mb-2" />
+                  <p className="text-sm font-semibold">No projects found in this category.</p>
+                  <p className={`text-xs mt-1 ${mutedText}`}>
+                    {admin ? "Assign a new project to get started." : "No tasks currently assigned to you."}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {visibleProjects.map((project) => {
+                    const projectProgress = Number(
+                      project.progress ?? (project.status === "COMPLETED" ? 100 : 0)
+                    );
+                    const isSelected = selected?.id === project.id;
+                    return (
+                      <div
+                        key={project.id}
+                        onClick={() => void selectProject(project)}
+                        className={`cursor-pointer rounded-3xl border p-5 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${
+                          isSelected
+                            ? "border-indigo-500 bg-indigo-950/20 ring-2 ring-indigo-500/20"
+                            : `${bgCard} hover:border-indigo-500/40`
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className={`font-bold text-sm leading-tight ${dark ? "text-white" : "text-slate-900"}`}>
+                              {project.name}
+                            </h3>
+                            <div className={`text-xs mt-1 ${mutedText}`}>
+                              {project.client_name || "Internal Project"}
+                              {project.developer_name ? ` • ${project.developer_name}` : ""}
+                            </div>
+                          </div>
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
+                              project.status === "COMPLETED"
+                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                : project.status === "IN_PROGRESS"
+                                ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                                : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                            }`}
+                          >
+                            {project.status.replace("_", " ")}
+                          </span>
+                        </div>
+
+                        <p className={`mt-3 line-clamp-2 text-xs leading-relaxed ${mutedText}`}>
+                          {project.description || "No description provided."}
+                        </p>
+
+                        <div className="mt-4 pt-3 border-t border-inherit">
+                          <div className="flex items-center justify-between text-xs mb-1.5">
+                            <span className={mutedText}>Completion</span>
+                            <span className="font-semibold text-indigo-400">{projectProgress}%</span>
+                          </div>
+                          <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-cyan-400 transition-all duration-500"
+                              style={{ width: `${projectProgress}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {project.due_date && (
+                          <div className={`mt-3 flex items-center gap-1.5 text-[11px] ${mutedText}`}>
+                            <CalendarDays size={13} />
+                            <span>Due: {new Date(project.due_date).toLocaleDateString()}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* PROJECT DETAILS & PROGRESS UPDATE MODAL/DRAWER */}
+              <AnimatePresence>
+                {selected && (
+                  <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onClick={() => setSelected(null)}
+                      className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+                    />
+
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                      className={`relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border p-6 lg:p-8 shadow-2xl ${
+                        dark ? "border-white/10 bg-[#121624] text-white" : "border-slate-200 bg-white text-slate-900"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4 border-b border-inherit pb-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xl font-bold">{selected.name}</h3>
+                            <span className="rounded-full px-2.5 py-0.5 text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                              {selected.status.replace("_", " ")}
+                            </span>
+                          </div>
+                          <p className={`text-xs mt-1 ${mutedText}`}>
+                            Client: {selected.client_name || "Internal"} • Assigned:{" "}
+                            {selected.developer_name || "Developer"}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setSelected(null)}
+                          className="p-1.5 rounded-xl text-slate-400 hover:text-white"
+                        >
+                          <X size={20} />
+                        </button>
+                      </div>
+
+                      {/* Project Description */}
+                      <div className="mt-4">
+                        <h4 className={`text-[11px] font-bold uppercase tracking-wider ${mutedText}`}>
+                          Project Scope & Non-secret Notes
+                        </h4>
+                        <p className={`mt-1 text-xs leading-relaxed ${dark ? "text-slate-300" : "text-slate-700"}`}>
+                          {selected.description || "No description added."}
+                        </p>
+                      </div>
+
+                      {/* STATUS TOGGLE */}
+                      <div className="mt-5 rounded-2xl border border-inherit p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-bold">Update Status</span>
+                          <span className="text-xs text-indigo-400 font-semibold">{progress}% complete</span>
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-2 mb-4">
+                          {[
+                            { id: "NEW", label: "New" },
+                            { id: "PENDING", label: "Pending" },
+                            { id: "IN_PROGRESS", label: "In Progress" },
+                            { id: "COMPLETED", label: "Completed" },
+                          ].map((s) => (
+                            <button
+                              key={s.id}
+                              onClick={() => void updateProjectStatus(s.id)}
+                              className={`py-2 rounded-xl text-xs font-semibold transition ${
+                                selected.status === s.id
+                                  ? "bg-indigo-600 text-white shadow-md"
+                                  : "border border-inherit text-slate-400 hover:bg-white/5"
+                              }`}
+                            >
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Slider */}
+                        <label className="block text-xs font-semibold mb-1">Progress Percentage</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={progress}
+                          onChange={(e) => setProgress(Number(e.target.value))}
+                          className="w-full accent-indigo-600 h-2 bg-slate-800 rounded-lg cursor-pointer"
+                        />
+
+                        {/* Note */}
+                        <textarea
+                          rows={2}
+                          value={message}
+                          onChange={(e) => setMessage(e.target.value)}
+                          placeholder="Add progress note or milestone completed..."
+                          className={`mt-3 w-full rounded-xl border p-3 text-xs outline-none ${inputBg}`}
+                        />
+
+                        <button
+                          disabled={saving === "update"}
+                          onClick={() => void addUpdate()}
+                          className="mt-3 w-full flex items-center justify-center gap-2 h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-semibold shadow hover:opacity-95 disabled:opacity-50"
+                        >
+                          <Send size={14} />
+                          <span>{saving === "update" ? "Saving..." : "Save Progress Update"}</span>
+                        </button>
+                      </div>
+
+                      {/* UPDATES TIMELINE */}
+                      <div className="mt-6">
+                        <h4 className="text-xs font-bold mb-3">Delivery Updates History</h4>
+                        <div className="space-y-2.5 max-h-56 overflow-y-auto">
+                          {updates.map((u) => (
+                            <div key={u.id} className="rounded-2xl border border-inherit p-3 text-xs">
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-slate-200">
+                                  {u.author_name || "Developer"}
+                                </span>
+                                <span className="font-mono text-indigo-400 font-bold">{u.progress}%</span>
+                              </div>
+                              {u.message && <p className={`mt-1 ${mutedText}`}>{u.message}</p>}
+                              <div className={`mt-1.5 text-[10px] ${mutedText}`}>
+                                {new Date(u.created_at).toLocaleString()}
+                              </div>
+                            </div>
+                          ))}
+                          {updates.length === 0 && (
+                            <div className={`text-center py-4 text-xs ${mutedText}`}>
+                              No progress logs recorded yet.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
+          {/* TAB 2: TEAM MEMBERS (ADMIN ONLY) */}
+          {activeTab === "team" && admin && (
+            <div className="space-y-6 max-w-[1600px] mx-auto w-full">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className={`text-xl font-bold ${dark ? "text-white" : "text-slate-900"}`}>Engineering Team Directory</h3>
+                  <p className={`text-xs mt-1 ${mutedText}`}>
+                    Manage developer logins, delivery workloads, and active task progress.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowCreateDevModal(true)}
+                  className="flex h-10 items-center gap-2 rounded-xl bg-indigo-600 px-4 text-xs font-semibold text-white shadow hover:bg-indigo-700"
+                >
+                  <Plus size={16} />
+                  <span>Create Developer Login</span>
+                </button>
+              </div>
+
+              {/* Developer Cards Grid */}
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {developers.map((dev) => {
+                  const assigned = Number(dev.assigned_projects ?? 0);
+                  const active = Number(dev.active_projects ?? 0);
+                  const done = Number(dev.completed_projects ?? 0);
+                  const avg = Number(dev.average_progress ?? 0);
+                  const isSelected = activeDeveloperId === dev.id;
+
+                  return (
+                    <div
+                      key={dev.id}
+                      className={`rounded-3xl border p-5 transition-all ${
+                        isSelected
+                          ? "border-indigo-500 bg-indigo-950/20 ring-2 ring-indigo-500/20"
+                          : bgCard
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="font-bold text-sm">{dev.name}</div>
+                          <div className={`text-xs mt-0.5 ${mutedText}`}>{dev.email}</div>
+                        </div>
+                        <span className="rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-[10px] font-bold text-indigo-400">
+                          {avg}% Progress
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-xl bg-white/5 p-2">
+                          <div className="text-base font-bold text-white">{assigned}</div>
+                          <div className={`text-[10px] uppercase ${mutedText}`}>Assigned</div>
+                        </div>
+                        <div className="rounded-xl bg-cyan-500/10 p-2">
+                          <div className="text-base font-bold text-cyan-400">{active}</div>
+                          <div className="text-[10px] uppercase text-cyan-400">Active</div>
+                        </div>
+                        <div className="rounded-xl bg-emerald-500/10 p-2">
+                          <div className="text-base font-bold text-emerald-400">{done}</div>
+                          <div className="text-[10px] uppercase text-emerald-400">Done</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setActiveDeveloperId(isSelected ? null : dev.id);
+                            setActiveTab("projects");
+                          }}
+                          className="flex-1 h-8 rounded-xl border border-inherit text-xs font-semibold hover:bg-white/5 transition"
+                        >
+                          View Projects
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveDeveloperId(dev.id);
+                            void removeDeveloper();
+                          }}
+                          title="Remove developer"
+                          className="h-8 w-8 flex items-center justify-center rounded-xl text-rose-400 hover:bg-rose-500/10 transition"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* CREATE DEVELOPER MODAL */}
+              <AnimatePresence>
+                {showCreateDevModal && (
+                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div
+                      className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+                      onClick={() => setShowCreateDevModal(false)}
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      className={`relative w-full max-w-md rounded-3xl border p-6 shadow-2xl ${bgCard}`}
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-bold text-base">Create Developer Login</h3>
+                        <button
+                          onClick={() => setShowCreateDevModal(false)}
+                          className="text-slate-400 hover:text-white"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                      <form onSubmit={createDeveloper} className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-semibold mb-1">Developer Full Name</label>
+                          <input
+                            required
+                            value={developerForm.name}
+                            onChange={(e) => setDeveloperForm({ ...developerForm, name: e.target.value })}
+                            placeholder="e.g. Rahul Sharma"
+                            className={`h-10 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold mb-1">Work Email</label>
+                          <input
+                            required
+                            type="email"
+                            value={developerForm.email}
+                            onChange={(e) => setDeveloperForm({ ...developerForm, email: e.target.value })}
+                            placeholder="e.g. rahul@company.com"
+                            className={`h-10 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold mb-1">Temporary Password</label>
+                          <input
+                            required
+                            type="password"
+                            minLength={8}
+                            value={developerForm.password}
+                            onChange={(e) => setDeveloperForm({ ...developerForm, password: e.target.value })}
+                            placeholder="Min 8 characters"
+                            className={`h-10 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                          />
+                        </div>
+                        <div className="pt-2 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowCreateDevModal(false)}
+                            className="h-9 px-4 rounded-xl border border-inherit text-xs font-semibold"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={saving === "developer"}
+                            className="h-9 px-5 rounded-xl bg-indigo-600 text-xs font-semibold text-white shadow hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            {saving === "developer" ? "Creating..." : "Create Account"}
+                          </button>
+                        </div>
+                      </form>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
+          {/* TAB 3: ASSIGN PROJECT (ADMIN ONLY) */}
+          {activeTab === "assign" && admin && (
+            <div className="max-w-2xl mx-auto w-full space-y-5">
+              <div className={`rounded-3xl border p-6 lg:p-8 ${bgCard} shadow-xl`}>
+                <div className="flex items-center gap-2.5 mb-2">
+                  <div className="h-9 w-9 rounded-xl bg-indigo-600/15 text-indigo-400 flex items-center justify-center">
+                    <Plus size={18} />
+                  </div>
+                  <h3 className="text-lg font-bold">Assign New Project</h3>
+                </div>
+                <p className={`text-xs mb-6 ${mutedText}`}>
+                  Allocate a client or internal project with clear deliverables and assigned developer.
+                </p>
+
+                <form onSubmit={createProject} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                      Project Title *
+                    </label>
+                    <input
+                      required
+                      value={projectForm.name}
+                      onChange={(e) => setProjectForm({ ...projectForm, name: e.target.value })}
+                      placeholder="e.g. Next.js E-Commerce Redesign"
+                      className={`h-11 w-full rounded-xl border px-3.5 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                    />
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                        Client / Business Name
+                      </label>
+                      <input
+                        value={projectForm.clientName}
+                        onChange={(e) => setProjectForm({ ...projectForm, clientName: e.target.value })}
+                        placeholder="e.g. Apex Global"
+                        className={`h-11 w-full rounded-xl border px-3.5 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                        Assign Developer *
+                      </label>
+                      <select
+                        required
+                        value={projectForm.assignedDeveloperId}
+                        onChange={(e) => setProjectForm({ ...projectForm, assignedDeveloperId: e.target.value })}
+                        className={`h-11 w-full rounded-xl border px-3 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                      >
+                        <option value="">Select an engineer</option>
+                        {developers.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name} ({d.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                        Priority Level
+                      </label>
+                      <select
+                        value={projectForm.priority}
+                        onChange={(e) => setProjectForm({ ...projectForm, priority: e.target.value })}
+                        className={`h-11 w-full rounded-xl border px-3 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                      >
+                        <option value="LOW">Low</option>
+                        <option value="MEDIUM">Medium</option>
+                        <option value="HIGH">High</option>
+                        <option value="URGENT">Urgent</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                        Target Due Date
+                      </label>
+                      <input
+                        type="date"
+                        ref={dueDateRef}
+                        value={projectForm.dueDate}
+                        onChange={(e) => setProjectForm({ ...projectForm, dueDate: e.target.value })}
+                        className={`h-11 w-full rounded-xl border px-3 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                      Deliverables & Scope Brief
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={projectForm.description}
+                      onChange={(e) => setProjectForm({ ...projectForm, description: e.target.value })}
+                      placeholder="Describe the expected functionality, endpoints, Figma links, or deployment requirements..."
+                      className={`w-full rounded-xl border p-3.5 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={saving === "project" || developers.length === 0}
+                    className="w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 text-white font-semibold text-xs shadow-lg shadow-indigo-600/25 hover:opacity-95 disabled:opacity-50"
+                  >
+                    {saving === "project" ? "Assigning Project..." : "Assign Project to Developer"}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+        </main>
       </div>
-      <div className="relative z-10 mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="developer-workspace__metric"><BriefcaseBusiness size={15}/><span><b>{projects.length}</b> total projects</span></div><div className="developer-workspace__metric"><Clock3 size={15}/><span><b>{activeProjects}</b> in progress</span></div><div className="developer-workspace__metric"><CheckCircle2 size={15}/><span><b>{completedProjects}</b> completed</span></div><div className="developer-workspace__metric"><ArrowUpRight size={15}/><span><b>{averageProgress}%</b> average progress</span></div></div>
     </div>
-    {notice && <div role="status" className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">{notice}</div>}
-    {showSettings && onLogout && <AccountSettingsPanel onLogout={onLogout}/>} 
-
-    {admin && <div className="space-y-5">
-      <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }} className="w-full rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-2 font-semibold text-slate-900"><Users size={18} className="text-indigo-600"/> Create developer login</div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
-          <input className={input} placeholder="Developer name" value={developerForm.name} onChange={e => setDeveloperForm({ ...developerForm, name: e.target.value })}/>
-          <input className={input} type="email" placeholder="Email" value={developerForm.email} onChange={e => setDeveloperForm({ ...developerForm, email: e.target.value })}/>
-          <input className={input} type="password" minLength={8} placeholder="Temporary password" value={developerForm.password} onChange={e => setDeveloperForm({ ...developerForm, password: e.target.value })}/>
-          <button disabled={saving === "developer"} onClick={() => void createDeveloper()} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">{saving === "developer" ? "Creating…" : "Create developer"}</button>
-        </div>
-      </motion.section>
-      <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }} className="w-full rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-2 font-semibold text-slate-900"><Plus size={18} className="text-indigo-600"/> Assign a project</div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <input className={input} placeholder="Project name" value={projectForm.name} onChange={e => setProjectForm({ ...projectForm, name: e.target.value })}/>
-          <input className={input} placeholder="Client name" value={projectForm.clientName} onChange={e => setProjectForm({ ...projectForm, clientName: e.target.value })}/>
-          <select className={input} value={projectForm.assignedDeveloperId} onChange={e => setProjectForm({ ...projectForm, assignedDeveloperId: e.target.value })}><option value="">Assign developer</option>{developers.map(developer => <option key={developer.id} value={developer.id}>{developer.name}</option>)}</select>
-          <div><div className="mt-1 flex gap-2"><input ref={dueDateRef} aria-label="Project due date" className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10" type="date" value={projectForm.dueDate} onChange={e => setProjectForm({ ...projectForm, dueDate: e.target.value })}/><button type="button" aria-label="Open due date calendar" onClick={() => { const picker = dueDateRef.current as (HTMLInputElement & { showPicker?: () => void }) | null; picker?.showPicker?.(); picker?.focus(); }} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-indigo-600 hover:bg-indigo-50"><CalendarDays size={17}/></button></div></div>
-          <textarea className="sm:col-span-2 mt-1 min-h-20 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-900 placeholder:text-slate-400" placeholder="Scope, deliverables and non-secret access notes" value={projectForm.description} onChange={e => setProjectForm({ ...projectForm, description: e.target.value })}/>
-        </div>
-        <p className="mt-2 text-xs text-slate-500">Do not add client passwords or API keys here. Project secrets belong in a dedicated encrypted vault.</p>
-        <button disabled={saving === "project"} onClick={() => void createProject()} className="mt-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{saving === "project" ? "Assigning…" : "Assign project"}</button>
-      </motion.section>
-    </div>}
-
-    {admin && <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><div className="flex items-center gap-2 font-semibold text-slate-900"><Users size={18} className="text-indigo-600"/> Team delivery overview</div><p className="mt-1 text-sm text-slate-500">Select a developer and project status to see exactly what is assigned and how much is complete.</p></div><div className="flex flex-wrap gap-2"><select aria-label="Select developer overview" value={activeDeveloperId ?? ""} onChange={e => selectDeveloper(e.target.value || null)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700"><option value="">All developers</option>{developers.map(developer => <option key={developer.id} value={developer.id}>{developer.name}</option>)}</select><select aria-label="Filter project status" value={projectStatusFilter} onChange={e => setProjectStatusFilter(e.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700"><option value="ALL">All statuses</option><option value="NEW">New</option><option value="PENDING">Pending</option><option value="IN_PROGRESS">In progress</option><option value="COMPLETED">Completed</option></select></div></div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {developers.map(developer => { const total = Number(developer.assigned_projects ?? 0); const completed = Number(developer.completed_projects ?? 0); const active = Number(developer.active_projects ?? 0); const completion = Number(developer.average_progress ?? 0); return <button key={developer.id} onClick={() => selectDeveloper(developer.id)} className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md ${activeDeveloperId === developer.id ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100" : "border-slate-200 bg-white"}`}><div className="flex items-start justify-between gap-3"><div><div className="font-semibold text-slate-900">{developer.name}</div><div className="mt-1 truncate text-xs text-slate-500">{developer.email}</div></div><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600">{completion}% progress</span></div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-slate-50 p-2"><div className="text-base font-semibold text-slate-900">{total}</div><div className="text-[10px] uppercase tracking-wide text-slate-500">Assigned</div></div><div className="rounded-xl bg-blue-50 p-2"><div className="text-base font-semibold text-blue-700">{active}</div><div className="text-[10px] uppercase tracking-wide text-blue-600">Active</div></div><div className="rounded-xl bg-emerald-50 p-2"><div className="text-base font-semibold text-emerald-700">{completed}</div><div className="text-[10px] uppercase tracking-wide text-emerald-600">Done</div></div></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400" style={{ width: `${completion}%` }}/></div><div className="mt-2 text-xs text-slate-400">{developer.last_activity_at ? `Last activity ${new Date(developer.last_activity_at).toLocaleDateString()}` : "No project activity yet"}</div></button>; })}
-        {developers.length === 0 && !loading && <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">Create a developer account to begin assigning and tracking delivery work.</div>}
-      </div>
-      {activeDeveloperId && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"><div className="text-sm text-slate-600">To preserve delivery history, reassign this developer’s projects before removing their account.</div><button disabled={removingDeveloper} onClick={() => void removeDeveloper()} className="flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60"><Trash2 size={15}/>{removingDeveloper ? "Removing…" : "Remove selected developer"}</button></div>}
-    </motion.section>}
-
-    <div className="grid gap-5">
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2 font-semibold text-slate-900"><FolderKanban size={18} className="text-indigo-600"/>{admin ? activeDeveloperId ? `${developers.find(developer => developer.id === activeDeveloperId)?.name ?? "Developer"} — projects` : "All projects" : "My assignments"}</div>
-        <div className="space-y-3">
-          {loading && <div className="rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-500">Refreshing workspace…</div>}
-          {visibleProjects.length === 0 && !loading && <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">{activeDeveloperId ? "This developer has no assigned projects." : "No projects assigned yet."}</div>}
-          {visibleProjects.map(project => { const projectProgress = Number(project.progress ?? (project.status === "COMPLETED" ? 100 : 0)); return <button key={project.id} onClick={() => void selectProject(project)} className={`w-full rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md ${selected?.id === project.id ? "border-indigo-400 bg-indigo-50" : "border-slate-200"}`}><div className="flex items-start justify-between gap-3"><div><div className="font-semibold text-slate-900">{project.name}</div><div className="mt-1 text-xs text-slate-500">{project.client_name || "Internal project"} {project.developer_name ? `· ${project.developer_name}` : ""}</div></div><span className="rounded-full bg-indigo-100 px-2 py-1 text-[10px] font-bold text-indigo-700">{project.status.replace("_", " ")}</span></div><div className="mt-3 line-clamp-2 text-sm text-slate-600">{project.description || "No delivery brief added."}</div><div className="mt-3 flex items-center gap-3"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400" style={{ width: `${projectProgress}%` }}/></div><span className="text-xs font-semibold text-slate-600">{projectProgress}% done</span></div></button>; })}
-        </div>
-      </section>
-      {admin && selected && <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="font-semibold text-slate-900">{selected.name}</div><div className="mt-1 text-xs text-slate-500">{selected.developer_name || "Assigned developer"} · {selected.status.replace("_", " ")} · {Number(selected.progress ?? (selected.status === "COMPLETED" ? 100 : 0))}% complete</div></div><span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">{Number(selected.progress ?? (selected.status === "COMPLETED" ? 100 : 0))}% done</span></div><div className="mt-4 rounded-xl bg-slate-50 p-4"><div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project description</div><p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{selected.description || "No project description added."}</p></div><div className="mt-5"><div className="text-sm font-semibold text-slate-900">Developer progress updates</div><div className="mt-3 space-y-3">{updates.map(update => <div key={update.id} className="rounded-xl border border-slate-200 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-semibold text-slate-800">{update.author_name || selected.developer_name || "Developer"}</span><span className="text-xs font-semibold text-indigo-600">{update.progress}% complete</span></div><p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{update.message || "No progress note provided."}</p><div className="mt-2 text-xs text-slate-400">{new Date(update.created_at).toLocaleString()}</div></div>)}{updates.length === 0 && <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">No developer progress updates saved yet.</div>}</div></div></section>}
-      {!admin && selected && <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="font-semibold text-slate-900">Update {selected.name}</div><div className="mt-1 text-xs text-slate-500">Choose status and record completed work for your Super Admin.</div></div><div className="flex rounded-xl bg-slate-100 p-1">{[["NEW","New"],["PENDING","Pending"],["IN_PROGRESS","Processing"],["COMPLETED","Completed"]].map(([value,label])=><button key={value} onClick={()=> void updateProjectStatus(value)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${selected.status===value?"bg-indigo-600 text-white":"text-slate-600 hover:bg-white"}`}>{label}</button>)}</div></div><div className="mt-5"><div className="mb-2 flex justify-between text-sm font-medium text-slate-700"><span>Work completed</span><span>{progress}%</span></div><input aria-label="Completion percentage" type="range" min="0" max="100" step="1" value={progress} onChange={e=>setProgress(Number(e.target.value))} className="w-full accent-indigo-600"/></div><textarea value={message} onChange={e=>setMessage(e.target.value)} placeholder="Optional progress note" className="mt-4 min-h-24 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-900 placeholder:text-slate-400"/><button disabled={saving==="update"} onClick={()=>void addUpdate()} className="mt-3 flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"><Send size={15}/>{saving==="update"?"Saving…":"Save progress update"}</button></section>}
-    </div>
-  </motion.div>;
+  );
 }

@@ -4,8 +4,33 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+html.dark, html.dark body {
+  background: #070a13;
+  color: #f8fafc;
+}
+
+html:not(.dark), html:not(.dark) body {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+#__next {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
 * {
   font-family: 'Inter', sans-serif;
+  box-sizing: border-box;
 }
 
 .mono {

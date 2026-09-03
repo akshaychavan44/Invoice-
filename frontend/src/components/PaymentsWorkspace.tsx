@@ -1,22 +1,501 @@
-import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Plus, Search, X } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  CalendarDays, Plus, Search, X, CheckCircle2, Clock,
+  AlertCircle, CreditCard, ArrowUpRight, Filter, RefreshCw
+} from "lucide-react";
 import { apiFetch } from "../lib/api";
 
-type Summary = { invoice_id:string; invoice_number:string; invoice_total:string|number; client_name:string; client_company:string|null; due_date:string; total_paid:string|number; payment_method:string|null; latest_payment_date:string|null; invoice_created_by_name:string|null; payment_created_by_name:string|null };
-type Invoice = { id:string; invoice_number:string; client_name:string; total:string|number };
-const money = (value:number) => `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+type Summary = {
+  invoice_id: string;
+  invoice_number: string;
+  invoice_total: string | number;
+  client_name: string;
+  client_company: string | null;
+  due_date: string;
+  total_paid: string | number;
+  payment_method: string | null;
+  latest_payment_date: string | null;
+  invoice_created_by_name: string | null;
+  payment_created_by_name: string | null;
+};
 
-export default function PaymentsWorkspace({ dark, role }: { dark:boolean; role:string }) {
-  const [rows, setRows] = useState<Summary[]>([]); const [invoices, setInvoices] = useState<Invoice[]>([]); const [query, setQuery] = useState(""); const [status, setStatus] = useState("ALL"); const [open, setOpen] = useState(false); const [notice, setNotice] = useState(""); const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ invoiceId:"", amount:"", method:"UPI", paymentDate:new Date().toISOString().slice(0, 10), notes:"" });
-  const load = async () => { try { const [summaryResponse, invoiceResponse] = await Promise.all([apiFetch("/api/payments/summary"), apiFetch("/api/invoices")]); const [summaryData, invoiceData] = await Promise.all([summaryResponse.json(), invoiceResponse.json()]); if (!summaryResponse.ok) throw new Error(summaryData.message || "Unable to load payments"); setRows(summaryData.data ?? []); setInvoices(invoiceData.data ?? []); } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to load payments"); } };
-  useEffect(() => { void load(); }, []);
-  const enriched = useMemo(() => rows.map(row => { const total = Number(row.invoice_total); const paid = Number(row.total_paid); const remaining = Math.max(total - paid, 0); const overdue = remaining > 0 && new Date(row.due_date) < new Date(new Date().toDateString()); const paymentStatus = remaining === 0 ? "Paid" : paid > 0 ? "Partially Paid" : "Unpaid"; return { ...row, total, paid, remaining, overdue, paymentStatus, client:row.client_company || row.client_name }; }), [rows]);
-  const filtered = enriched.filter(row => (status === "ALL" || row.paymentStatus === status) && `${row.invoice_number} ${row.client}`.toLowerCase().includes(query.toLowerCase()));
-  const stats = useMemo(() => ({ invoiced: enriched.reduce((sum, row) => sum + row.total, 0), received: enriched.reduce((sum, row) => sum + row.paid, 0), due: enriched.reduce((sum, row) => sum + row.remaining, 0), overdue: enriched.filter(row => row.overdue).reduce((sum, row) => sum + row.remaining, 0) }), [enriched]);
-  const selectedInvoice = invoices.find(invoice => invoice.id === form.invoiceId);
-  const submit = async (event: React.FormEvent) => { event.preventDefault(); setNotice(""); setSaving(true); try { const response = await apiFetch("/api/payments", { method:"POST", body:JSON.stringify({ invoiceId:form.invoiceId, amount:Number(form.amount), method:form.method, paymentDate:form.paymentDate, notes:form.notes || undefined }) }); const data = await response.json(); if (!response.ok) throw new Error(data.message || "Unable to record payment"); setOpen(false); setForm({ invoiceId:"", amount:"", method:"UPI", paymentDate:new Date().toISOString().slice(0,10), notes:"" }); await load(); } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to record payment"); } finally { setSaving(false); } };
-  const card = dark ? "border-[#363b48] bg-[#272b35]" : "border-slate-200 bg-white"; const input = dark ? "border-[#434a5a] bg-[#222630] text-white" : "border-slate-200 bg-white text-slate-900"; const muted = dark ? "text-slate-400" : "text-slate-500";
+type Invoice = {
+  id: string;
+  invoice_number: string;
+  client_name: string;
+  total: string | number;
+};
+
+const money = (value: number) =>
+  `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+
+export default function PaymentsWorkspace({
+  dark = true,
+  role,
+}: {
+  dark?: boolean;
+  role: string;
+}) {
+  const [rows, setRows] = useState<Summary[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("ALL");
+  const [open, setOpen] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const [form, setForm] = useState({
+    invoiceId: "",
+    amount: "",
+    method: "UPI",
+    paymentDate: new Date().toISOString().slice(0, 10),
+    notes: "",
+  });
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [summaryResponse, invoiceResponse] = await Promise.all([
+        apiFetch("/api/payments/summary"),
+        apiFetch("/api/invoices"),
+      ]);
+      const [summaryData, invoiceData] = await Promise.all([
+        summaryResponse.json(),
+        invoiceResponse.json(),
+      ]);
+      if (!summaryResponse.ok)
+        throw new Error(summaryData.message || "Unable to load payments");
+      setRows(summaryData.data ?? []);
+      setInvoices(invoiceData.data ?? []);
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Unable to load payments"
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const enriched = useMemo(() => {
+    return rows.map((row) => {
+      const total = Number(row.invoice_total);
+      const paid = Number(row.total_paid);
+      const remaining = Math.max(total - paid, 0);
+      const overdue =
+        remaining > 0 && new Date(row.due_date) < new Date(new Date().toDateString());
+      const paymentStatus =
+        remaining === 0 ? "Paid" : paid > 0 ? "Partially Paid" : "Unpaid";
+      return {
+        ...row,
+        total,
+        paid,
+        remaining,
+        overdue,
+        paymentStatus,
+        client: row.client_company || row.client_name,
+      };
+    });
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    return enriched.filter(
+      (row) =>
+        (status === "ALL" || row.paymentStatus === status) &&
+        `${row.invoice_number} ${row.client}`
+          .toLowerCase()
+          .includes(query.toLowerCase())
+    );
+  }, [enriched, status, query]);
+
+  const stats = useMemo(
+    () => ({
+      invoiced: enriched.reduce((sum, row) => sum + row.total, 0),
+      received: enriched.reduce((sum, row) => sum + row.paid, 0),
+      due: enriched.reduce((sum, row) => sum + row.remaining, 0),
+      overdue: enriched
+        .filter((row) => row.overdue)
+        .reduce((sum, row) => sum + row.remaining, 0),
+    }),
+    [enriched]
+  );
+
+  const selectedInvoice = invoices.find((inv) => inv.id === form.invoiceId);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setNotice("");
+    setSaving(true);
+    try {
+      const response = await apiFetch("/api/payments", {
+        method: "POST",
+        body: JSON.stringify({
+          invoiceId: form.invoiceId,
+          amount: Number(form.amount),
+          method: form.method,
+          paymentDate: form.paymentDate,
+          notes: form.notes || undefined,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Unable to record payment");
+      setOpen(false);
+      setForm({
+        invoiceId: "",
+        amount: "",
+        method: "UPI",
+        paymentDate: new Date().toISOString().slice(0, 10),
+        notes: "",
+      });
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to record payment");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cardBg = dark ? "bg-[#111628]/90 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900";
+  const inputBg = dark ? "bg-[#182035] border-white/10 text-white placeholder-slate-400" : "bg-white border-slate-200 text-slate-900 placeholder-slate-400";
+  const muted = dark ? "text-slate-400" : "text-slate-500";
   const showCreatedBy = role === "SUPER_ADMIN";
-  return <div className="max-w-[1600px] mx-auto space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-[22px] font-bold">Payments</h1><p className={`text-[13px] ${muted}`}>Track client payments, balances, and invoice status.</p></div><button onClick={() => { setNotice(""); setOpen(true); }} className="h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 text-[13px] font-medium text-white flex items-center gap-2"><Plus size={16}/>Add Payment</button></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[["Total Invoiced", stats.invoiced, "text-indigo-500"],["Total Received", stats.received, "text-emerald-500"],["Total Due", stats.due, "text-amber-500"],["Overdue", stats.overdue, "text-rose-500"]].map(([label, value, color]) => <div key={String(label)} className={`rounded-2xl border p-4 ${card}`}><p className={`text-xs ${muted}`}>{label}</p><p className={`mt-2 text-xl font-bold ${color}`}>{money(Number(value))}</p></div>)}</div><div className={`rounded-2xl border p-3 ${card}`}><div className="flex flex-wrap gap-3"><label className={`flex h-10 min-w-[220px] flex-1 items-center gap-2 rounded-xl border px-3 ${input}`}><Search size={16} className={muted}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search client or invoice…" className="w-full bg-transparent text-sm outline-none"/></label><select value={status} onChange={event => setStatus(event.target.value)} className={`h-10 rounded-xl border px-3 text-sm ${input}`}><option value="ALL">All statuses</option><option>Paid</option><option>Partially Paid</option><option>Unpaid</option></select></div></div>{notice && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">{notice}</div>}<div className={`overflow-x-auto rounded-2xl border ${card}`}><table className="min-w-[1150px] w-full text-sm"><thead className={`${dark ? "bg-[#222630]" : "bg-slate-50"} ${muted}`}><tr><th className="p-3 text-left">Invoice Number</th><th className="p-3 text-left">Client Name</th><th className="p-3 text-right">Invoice Total</th><th className="p-3 text-right">Total Paid</th><th className="p-3 text-right">Remaining</th><th className="p-3 text-left">Method</th><th className="p-3 text-left">Status</th><th className="p-3 text-left">Payment Date</th>{showCreatedBy && <th className="p-3 text-left">Created By</th>}</tr></thead><tbody>{filtered.map(row => <tr key={row.invoice_id} className={`border-t ${dark ? "border-[#363b48]" : "border-slate-100"}`}><td className="p-3 font-semibold">{row.invoice_number}</td><td className="p-3">{row.client}</td><td className="p-3 text-right">{money(row.total)}</td><td className="p-3 text-right text-emerald-500">{money(row.paid)}</td><td className="p-3 text-right font-medium">{money(row.remaining)}</td><td className="p-3">{row.payment_method || "—"}</td><td className="p-3"><span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${row.paymentStatus === "Paid" ? "bg-emerald-500/15 text-emerald-500" : row.paymentStatus === "Partially Paid" ? "bg-amber-500/15 text-amber-600" : "bg-rose-500/15 text-rose-500"}`}>{row.paymentStatus}</span></td><td className="p-3">{row.latest_payment_date ? new Date(row.latest_payment_date).toLocaleDateString() : "—"}</td>{showCreatedBy && <td className="p-3">{row.payment_created_by_name || row.invoice_created_by_name || "—"}</td>}</tr>)}{filtered.length === 0 && <tr><td colSpan={showCreatedBy ? 9 : 8} className={`p-10 text-center ${muted}`}>No invoices match this payment filter.</td></tr>}</tbody></table></div>{open && <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"><button onClick={() => !saving && setOpen(false)} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"/><form onSubmit={submit} className="relative w-full max-w-lg rounded-2xl bg-white p-6 text-slate-900 shadow-2xl"><div className="mb-5 flex justify-between"><div><h2 className="text-lg font-bold">Add Payment</h2><p className="text-sm text-slate-500">Record a payment against an invoice.</p></div><button type="button" onClick={() => setOpen(false)}><X size={20}/></button></div><div className="space-y-3"><select required value={form.invoiceId} onChange={event => setForm({ ...form, invoiceId:event.target.value })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="">Select invoice</option>{invoices.map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.invoice_number} · {invoice.client_name}</option>)}</select>{selectedInvoice && <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm"><span className="text-slate-500">Client: </span><b>{selectedInvoice.client_name}</b><span className="ml-3 text-slate-500">Invoice: </span><b>{money(Number(selectedInvoice.total))}</b></div>}<input required min="0.01" step="0.01" type="number" value={form.amount} onChange={event => setForm({ ...form, amount:event.target.value })} placeholder="Amount to pay" className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"/><div className="grid grid-cols-2 gap-3"><select value={form.method} onChange={event => setForm({ ...form, method:event.target.value })} className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm"><option>Cash</option><option>UPI</option><option>Bank Transfer</option><option>Cheque</option></select><label className="relative"><input required type="date" value={form.paymentDate} onChange={event => setForm({ ...form, paymentDate:event.target.value })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"/><CalendarDays className="pointer-events-none absolute right-3 top-3 text-slate-400" size={16}/></label></div><textarea value={form.notes} onChange={event => setForm({ ...form, notes:event.target.value })} placeholder="Notes (optional)" className="min-h-20 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm"/><button disabled={saving} className="h-11 w-full rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-60">{saving ? "Saving…" : "Save payment"}</button></div></form></div>}</div>;
+
+  return (
+    <div className="max-w-[1600px] mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Payments Hub</h1>
+          <p className={`text-xs mt-1 ${muted}`}>
+            Real-time tracking of client invoices, settlements, and outstanding balances.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void load()}
+            title="Refresh payments"
+            className={`flex h-10 w-10 items-center justify-center rounded-xl border transition ${
+              dark ? "border-white/10 hover:bg-white/5" : "border-slate-200 hover:bg-slate-100"
+            }`}
+          >
+            <RefreshCw size={15} className={loading ? "animate-spin text-indigo-400" : muted} />
+          </button>
+          <button
+            onClick={() => {
+              setNotice("");
+              setOpen(true);
+            }}
+            className="h-10 rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 px-4 text-xs font-semibold text-white shadow-lg shadow-indigo-600/25 flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <Plus size={16} />
+            <span>Record Payment</span>
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Total Invoiced", value: stats.invoiced, color: "text-indigo-400", border: "border-indigo-500/20" },
+          { label: "Total Collected", value: stats.received, color: "text-emerald-400", border: "border-emerald-500/20" },
+          { label: "Pending Balance", value: stats.due, color: "text-amber-400", border: "border-amber-500/20" },
+          { label: "Overdue Balance", value: stats.overdue, color: "text-rose-400", border: "border-rose-500/20" },
+        ].map((item) => (
+          <motion.div
+            key={item.label}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`rounded-3xl border p-5 ${cardBg} shadow-sm relative overflow-hidden`}
+          >
+            <div className={`text-[11px] font-bold uppercase tracking-wider ${muted}`}>
+              {item.label}
+            </div>
+            <div className={`mt-2 text-2xl lg:text-3xl font-bold mono ${item.color}`}>
+              {money(Number(item.value))}
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Filters & Search Bar */}
+      <div className={`rounded-2xl border p-3.5 flex flex-col sm:flex-row gap-3 items-center justify-between ${cardBg}`}>
+        <div className="relative w-full sm:w-80">
+          <Search size={15} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${muted}`} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by client or invoice number..."
+            className={`h-10 w-full rounded-xl border pl-9 pr-3 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+          />
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          {["ALL", "Paid", "Partially Paid", "Unpaid"].map((st) => (
+            <button
+              key={st}
+              onClick={() => setStatus(st)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                status === st
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                  : `${muted} border border-inherit hover:bg-white/5`
+              }`}
+            >
+              {st === "ALL" ? "All Statuses" : st}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Notice Banner */}
+      {notice && (
+        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs font-semibold text-rose-400 flex items-center justify-between">
+          <span>{notice}</span>
+          <button onClick={() => setNotice("")} className="opacity-70 hover:opacity-100">
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {/* Payments Table */}
+      <div className={`overflow-hidden rounded-3xl border ${cardBg} shadow-sm`}>
+        <div className="overflow-x-auto">
+          <table className="min-w-[1100px] w-full text-xs">
+            <thead className="border-b border-inherit bg-white/5 text-[11px] uppercase tracking-wider text-slate-400 font-bold">
+              <tr>
+                <th className="p-3.5 text-left">Invoice No</th>
+                <th className="p-3.5 text-left">Client Name</th>
+                <th className="p-3.5 text-right">Invoice Total</th>
+                <th className="p-3.5 text-right">Settled Amount</th>
+                <th className="p-3.5 text-right">Balance Due</th>
+                <th className="p-3.5 text-left">Payment Method</th>
+                <th className="p-3.5 text-left">Settlement Status</th>
+                <th className="p-3.5 text-left">Payment Date</th>
+                {showCreatedBy && <th className="p-3.5 text-left">Recorded By</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y border-inherit">
+              {filtered.map((row) => (
+                <tr key={row.invoice_id} className="hover:bg-white/5 transition">
+                  <td className="p-3.5 font-bold font-mono text-indigo-400">{row.invoice_number}</td>
+                  <td className="p-3.5 font-medium">{row.client}</td>
+                  <td className="p-3.5 text-right font-mono font-semibold">{money(row.total)}</td>
+                  <td className="p-3.5 text-right font-mono font-semibold text-emerald-400">
+                    {money(row.paid)}
+                  </td>
+                  <td className="p-3.5 text-right font-mono font-semibold">
+                    {row.remaining > 0 ? (
+                      <span className="text-amber-400">{money(row.remaining)}</span>
+                    ) : (
+                      <span className="text-slate-500">₹0.00</span>
+                    )}
+                  </td>
+                  <td className="p-3.5">
+                    <span className="rounded-lg bg-white/5 px-2 py-1 text-[11px] font-mono">
+                      {row.payment_method || "UPI"}
+                    </span>
+                  </td>
+                  <td className="p-3.5">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
+                        row.paymentStatus === "Paid"
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : row.paymentStatus === "Partially Paid"
+                          ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                          : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          row.paymentStatus === "Paid"
+                            ? "bg-emerald-400"
+                            : row.paymentStatus === "Partially Paid"
+                            ? "bg-amber-400"
+                            : "bg-rose-400"
+                        }`}
+                      />
+                      {row.paymentStatus}
+                    </span>
+                  </td>
+                  <td className="p-3.5 font-mono text-slate-400">
+                    {row.latest_payment_date
+                      ? new Date(row.latest_payment_date).toLocaleDateString()
+                      : "—"}
+                  </td>
+                  {showCreatedBy && (
+                    <td className="p-3.5 text-slate-400">
+                      {row.payment_created_by_name ||
+                        row.invoice_created_by_name ||
+                        "Super Admin"}
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={showCreatedBy ? 9 : 8} className={`p-14 text-center text-xs ${muted}`}>
+                    No payments found matching the selected criteria.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Record Payment Modal */}
+      <AnimatePresence>
+        {open && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !saving && setOpen(false)}
+              className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className={`relative w-full max-w-lg rounded-3xl border p-6 shadow-2xl ${cardBg}`}
+            >
+              <div className="flex items-center justify-between border-b border-inherit pb-4 mb-4">
+                <div>
+                  <h2 className="text-base font-bold">Record Client Payment</h2>
+                  <p className={`text-xs mt-0.5 ${muted}`}>
+                    Credit client balance and automatically update invoice status.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="rounded-xl p-1.5 text-slate-400 hover:text-white transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={submit} className="space-y-4">
+                <div>
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${muted}`}>
+                    Select Target Invoice *
+                  </label>
+                  <select
+                    required
+                    value={form.invoiceId}
+                    onChange={(e) => setForm({ ...form, invoiceId: e.target.value })}
+                    className={`h-11 w-full rounded-xl border px-3 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                  >
+                    <option value="">Choose an invoice...</option>
+                    {invoices.map((inv) => (
+                      <option key={inv.id} value={inv.id}>
+                        {inv.invoice_number} · {inv.client_name} ({money(Number(inv.total))})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedInvoice && (
+                  <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-3 text-xs">
+                    <div className="flex justify-between">
+                      <span className={muted}>Client:</span>
+                      <span className="font-bold text-white">{selectedInvoice.client_name}</span>
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span className={muted}>Invoice Total:</span>
+                      <span className="font-mono font-bold text-indigo-400">
+                        {money(Number(selectedInvoice.total))}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${muted}`}>
+                    Amount Received (₹) *
+                  </label>
+                  <input
+                    required
+                    min="0.01"
+                    step="0.01"
+                    type="number"
+                    value={form.amount}
+                    onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                    placeholder="e.g. 25000"
+                    className={`h-11 w-full rounded-xl border px-3 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${muted}`}>
+                      Payment Channel
+                    </label>
+                    <select
+                      value={form.method}
+                      onChange={(e) => setForm({ ...form, method: e.target.value })}
+                      className={`h-11 w-full rounded-xl border px-3 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                    >
+                      <option>UPI</option>
+                      <option>Bank Transfer</option>
+                      <option>Cheque</option>
+                      <option>Cash</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${muted}`}>
+                      Payment Date
+                    </label>
+                    <input
+                      required
+                      type="date"
+                      value={form.paymentDate}
+                      onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
+                      className={`h-11 w-full rounded-xl border px-3 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${muted}`}>
+                    Reference / Transaction Note
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={form.notes}
+                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                    placeholder="UTR number, transaction id, or cheque details..."
+                    className={`w-full rounded-xl border p-3 text-xs outline-none focus:border-indigo-500 ${inputBg}`}
+                  />
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="h-10 px-4 rounded-xl border border-inherit text-xs font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving || !form.invoiceId}
+                    className="h-10 px-5 rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 text-white font-semibold text-xs shadow hover:opacity-95 disabled:opacity-50"
+                  >
+                    {saving ? "Recording..." : "Confirm & Settle Payment"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
