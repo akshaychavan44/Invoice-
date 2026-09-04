@@ -8,10 +8,54 @@ import helmet from "helmet";
 import { z } from "zod";
 import { allow, AuthRequest, requireAuth, signToken } from "./auth";
 import { sql } from "./db/client";
-import { addFallbackClient, addFallbackFollowup, addFallbackInvoice, addFallbackLead, listFallbackClients, listFallbackFollowups, listFallbackInvoices, listFallbackLeads } from "./db/crmFallback";
+import {
+  addFallbackClient,
+  addFallbackExpense,
+  addFallbackFollowup,
+  addFallbackInvoice,
+  addFallbackLead,
+  addFallbackPayment,
+  addFallbackQuotation,
+  completeFallbackFollowup,
+  convertFallbackLead,
+  deleteFallbackFollowup,
+  deleteFallbackLead,
+  listFallbackClients,
+  listFallbackExpenses,
+  listFallbackFollowups,
+  listFallbackInvoices,
+  listFallbackLeads,
+  listFallbackPayments,
+  listFallbackQuotations,
+  updateFallbackFollowup,
+  updateFallbackLead,
+} from "./db/crmFallback";
 import { addFallbackUpdate, createFallbackDeveloper, createFallbackProject, fallbackDeveloperOverview, fallbackProject, findFallbackDeveloper, listFallbackProjects, listFallbackUpdates, removeFallbackDeveloper, setFallbackProjectStatus } from "./db/deliveryFallback";
+
+async function withDbTimeout<T>(promise: Promise<T>, ms = 1200): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Database timeout")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+import {
+  createMarketingCampaign,
+  createMarketingCreative,
+  deleteMarketingCampaign,
+  deleteMarketingCreative,
+  getMarketingOverview,
+  getUnsyncedMarketingLeads,
+  listMarketingCampaigns,
+  listMarketingCreatives,
+  listMarketingLeads,
+  markMarketingLeadSynced,
+  toggleMarketingCampaignStatus,
+  updateMarketingCampaign,
+} from "./db/marketingFallback";
 import { findDemoUser, isDemoPassword } from "./demoUsers";
-type UserRow = { id: string; name: string; email: string; role: "SUPER_ADMIN" | "SUB_ADMIN" | "SALES" | "DEVELOPER"; password_hash: string; must_change_password?: boolean; is_active?: boolean };
+type UserRow = { id: string; name: string; email: string; role: "SUPER_ADMIN" | "SUB_ADMIN" | "SALES" | "DEVELOPER" | "DIGITAL_MARKETING"; password_hash: string; must_change_password?: boolean; is_active?: boolean };
 const app = express();
 const frontendOrigin = process.env.FRONTEND_URL ?? "http://localhost:3000";
 app.use(helmet());
@@ -41,6 +85,24 @@ const projectInput = z.object({ name: z.string().min(2).max(160), clientName: z.
 const projectStatusInput = z.object({ status: projectStatus });
 const projectUpdateInput = z.object({ message: z.string().max(5000).optional().default(""), progress: z.number().int().min(0).max(100), status: projectStatus.optional() });
 const vaultItemInput = z.object({ label: z.string().min(2).max(120), service: z.string().min(2).max(160), username: z.string().min(1).max(500), secret: z.string().min(1).max(4000), notes: z.string().max(2000).optional() });
+const campaignInput = z.object({
+  name: z.string().min(2).max(160),
+  platform: z.string().min(2).max(60),
+  channel: z.string().min(2).max(60),
+  objective: z.string().min(2).max(60),
+  budget: z.number().positive(),
+  targetAudience: z.string().max(500).optional(),
+  startDate: z.string().date().optional(),
+  endDate: z.string().date().optional(),
+});
+const creativeInput = z.object({
+  campaignId: z.string().optional(),
+  title: z.string().min(2).max(160),
+  format: z.enum(["Video", "Carousel", "Single Image", "Story"]),
+  headline: z.string().min(2).max(300),
+  primaryText: z.string().min(2).max(2000),
+  cta: z.string().min(2).max(60),
+});
 const vaultKey = (): Buffer => {
   const value = process.env.VAULT_ENCRYPTION_KEY;
   if (value) {
@@ -55,25 +117,53 @@ const vaultKey = (): Buffer => {
 };
 const encryptVaultValue = (value: string, key: Buffer, iv: Buffer) => { const cipher = createCipheriv("aes-256-gcm", key, iv); return { value: Buffer.concat([cipher.update(value, "utf8"), cipher.final()]).toString("base64"), tag: cipher.getAuthTag().toString("base64") }; };
 const decryptVaultValue = (value: string, tag: string, key: Buffer, iv: Buffer) => { const decipher = createDecipheriv("aes-256-gcm", key, iv); decipher.setAuthTag(Buffer.from(tag, "base64")); return Buffer.concat([decipher.update(Buffer.from(value, "base64")), decipher.final()]).toString("utf8"); };
-app.get("/api/health", async (_request, response) => { await sql`SELECT 1`; response.json({ status: "ok", database: "neon" }); });
+app.get("/api/health", async (_request, response) => {
+  try {
+    await withDbTimeout(sql`SELECT 1`, 800);
+    response.json({ status: "ok", database: "neon" });
+  } catch {
+    response.json({ status: "ok", database: "offline_fallback" });
+  }
+});
 app.post("/api/auth/login", async (request: Request, response: Response) => {
   const parsed = login.safeParse(request.body);
   if (!parsed.success) { response.status(400).json({ message: "Valid email and password are required" }); return; }
+  const email = parsed.data.email.toLowerCase();
+  const password = parsed.data.password;
+
+  // 1. Check known demo accounts with demo password
+  const demoUser = findDemoUser(email);
+  if (demoUser && isDemoPassword(password)) {
+    try {
+      const rows = await withDbTimeout(sql`SELECT id, name, email, role, must_change_password, is_active FROM users WHERE email = ${email} LIMIT 1`, 800);
+      if (rows[0]) {
+        const u = rows[0] as UserRow;
+        response.json({ token: signToken(u.id, u.role), mustChangePassword: Boolean(u.must_change_password), user: { id: u.id, name: u.name, email: u.email, role: u.role } });
+        return;
+      }
+    } catch {}
+    response.json({ token: signToken(demoUser.id, demoUser.role), mustChangePassword: false, user: demoUser, demo: true });
+    return;
+  }
+
+  // 2. Query database for registered user accounts
   try {
-    const rows = await sql`SELECT id, name, email, role, password_hash, must_change_password, is_active FROM users WHERE email = ${parsed.data.email.toLowerCase()} LIMIT 1`;
+    const rows = await withDbTimeout(sql`SELECT id, name, email, role, password_hash, must_change_password, is_active FROM users WHERE email = ${email} LIMIT 1`, 1000);
     const user = rows[0] as UserRow | undefined;
-    if (!user || !(await bcrypt.compare(parsed.data.password, user.password_hash))) { response.status(401).json({ message: "Invalid email or password" }); return; }
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) { response.status(401).json({ message: "Invalid email or password" }); return; }
     if (!user.is_active) { response.status(403).json({ message:"This developer account is inactive. Contact your Super Admin." }); return; }
     response.json({ token: signToken(user.id, user.role), mustChangePassword: Boolean(user.must_change_password), user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch {
-    const fallbackDeveloper = await findFallbackDeveloper(parsed.data.email.toLowerCase());
-    if (fallbackDeveloper && await bcrypt.compare(parsed.data.password, fallbackDeveloper.password_hash)) {
+    const fallbackDeveloper = await findFallbackDeveloper(email);
+    if (fallbackDeveloper && await bcrypt.compare(password, fallbackDeveloper.password_hash)) {
       response.json({ token: signToken(fallbackDeveloper.id, fallbackDeveloper.role), user: { id: fallbackDeveloper.id, name: fallbackDeveloper.name, email: fallbackDeveloper.email, role: fallbackDeveloper.role }, fallback: true });
       return;
     }
-    const user = findDemoUser(parsed.data.email.toLowerCase());
-    if (!user || !isDemoPassword(parsed.data.password)) { response.status(503).json({ message: "The database is unavailable and this account cannot use offline access." }); return; }
-    response.json({ token: signToken(user.id, user.role), user, offline: true });
+    if (demoUser && isDemoPassword(password)) {
+      response.json({ token: signToken(demoUser.id, demoUser.role), user: demoUser, offline: true });
+      return;
+    }
+    response.status(503).json({ message: "The database is unavailable and this account cannot use offline access." });
   }
 });
 app.post("/api/auth/change-password", requireAuth, async (request: AuthRequest, response: Response) => {
@@ -81,54 +171,131 @@ app.post("/api/auth/change-password", requireAuth, async (request: AuthRequest, 
   if (!parsed.success) { response.status(400).json({ message: "Current and new passwords must be at least 8 characters." }); return; }
   if (parsed.data.currentPassword === parsed.data.newPassword) { response.status(400).json({ message: "Your new password must be different from your current password." }); return; }
   try {
-    const users = await sql`SELECT id, password_hash FROM users WHERE id = ${request.user!.id} LIMIT 1`;
+    const users = await withDbTimeout(sql`SELECT id, password_hash FROM users WHERE id = ${request.user!.id} LIMIT 1`, 1000);
     const user = users[0] as { id: string; password_hash: string } | undefined;
     if (!user) { response.status(404).json({ message: "Account not found." }); return; }
     if (!(await bcrypt.compare(parsed.data.currentPassword, user.password_hash))) { response.status(401).json({ message: "Your current password is incorrect." }); return; }
     const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
-    await sql`UPDATE users SET password_hash = ${passwordHash}, must_change_password = false, updated_at = now() WHERE id = ${request.user!.id}`;
+    await withDbTimeout(sql`UPDATE users SET password_hash = ${passwordHash}, must_change_password = false, updated_at = now() WHERE id = ${request.user!.id}`, 1000);
     response.json({ message: "Password changed successfully." });
   } catch {
     response.status(503).json({ message: "Unable to change password right now." });
   }
 });
 app.get("/api/auth/me", requireAuth, async (request: AuthRequest, response) => {
-  try { const rows = await sql`SELECT id, name, email, role FROM users WHERE id = ${request.user!.id} LIMIT 1`; response.json({ user: rows[0] ?? null }); }
-  catch { response.json({ user: findDemoUser(request.user!.id) ?? null, offline: true }); }
+  try {
+    const rows = await withDbTimeout(sql`SELECT id, name, email, role FROM users WHERE id = ${request.user!.id} LIMIT 1`, 800);
+    response.json({ user: rows[0] ?? findDemoUser(request.user!.id) ?? null });
+  } catch {
+    response.json({ user: findDemoUser(request.user!.id) ?? null, offline: true });
+  }
 });
 app.get("/api/notifications", requireAuth, async (request: AuthRequest, response) => {
-  try { const rows = await sql`SELECT id, user_id, title, message, is_read, created_at FROM notifications WHERE user_id = ${request.user!.id} AND hidden_from_bell = false AND NOT (is_read = true AND created_at < now() - interval '7 days') ORDER BY created_at DESC`; response.json({ data:rows }); }
-  catch { response.status(503).json({ message:"Unable to load notifications" }); }
+  try {
+    const rows = await withDbTimeout(sql`SELECT id, user_id, title, message, is_read, created_at FROM notifications WHERE user_id = ${request.user!.id} AND hidden_from_bell = false AND NOT (is_read = true AND created_at < now() - interval '7 days') ORDER BY created_at DESC`, 800);
+    response.json({ data: rows });
+  } catch {
+    response.json({ data: [] });
+  }
 });
 app.get("/api/notifications/history", requireAuth, async (request: AuthRequest, response) => {
-  try { const rows = await sql`SELECT id, user_id, title, message, is_read, created_at FROM notifications WHERE user_id = ${request.user!.id} ORDER BY created_at DESC`; response.json({ data:rows }); }
-  catch { response.status(503).json({ message:"Unable to load notification history" }); }
+  try {
+    const rows = await withDbTimeout(sql`SELECT id, user_id, title, message, is_read, created_at FROM notifications WHERE user_id = ${request.user!.id} ORDER BY created_at DESC`, 800);
+    response.json({ data: rows });
+  } catch {
+    response.json({ data: [] });
+  }
 });
 app.patch("/api/notifications/:id/read", requireAuth, async (request: AuthRequest, response) => {
-  try { const rows = await sql`UPDATE notifications SET is_read = true WHERE id = ${String(request.params.id)} AND user_id = ${request.user!.id} RETURNING id, user_id, title, message, is_read, created_at`; if (!rows[0]) { response.status(404).json({ message:"Notification not found" }); return; } response.json({ data:rows[0] }); }
-  catch { response.status(503).json({ message:"Unable to update notification" }); }
+  try {
+    const rows = await withDbTimeout(sql`UPDATE notifications SET is_read = true WHERE id = ${String(request.params.id)} AND user_id = ${request.user!.id} RETURNING id, user_id, title, message, is_read, created_at`, 800);
+    if (!rows[0]) { response.status(404).json({ message: "Notification not found" }); return; }
+    response.json({ data: rows[0] });
+  } catch {
+    response.json({ data: { id: request.params.id, is_read: true } });
+  }
 });
-app.post("/api/notifications/read-all", requireAuth, async (request: AuthRequest, response) => { try { await sql`UPDATE notifications SET is_read = true WHERE user_id = ${request.user!.id} AND is_read = false`; response.status(204).send(); } catch { response.status(503).json({ message:"Unable to update notifications" }); } });
-app.post("/api/notifications/clear-read", requireAuth, async (request: AuthRequest, response) => { try { await sql`UPDATE notifications SET hidden_from_bell = true WHERE user_id = ${request.user!.id} AND is_read = true`; response.status(204).send(); } catch { response.status(503).json({ message:"Unable to clear notifications" }); } });
-app.get("/api/leads", requireAuth, async (_request: AuthRequest, response) => { try { const rows = await sql`SELECT * FROM leads ORDER BY created_at DESC`; response.json({ data: rows }); } catch { response.status(503).json({ message:"Unable to load leads from the database" }); } });
-app.post("/api/leads", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => { const parsed = leadInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid lead", errors: parsed.error.flatten() }); return; } const data = parsed.data; try { const rows = await sql`INSERT INTO leads (full_name, company, email, phone, source, notes, status, assigned_to_id) VALUES (${data.fullName}, ${data.company ?? null}, ${data.email ?? null}, ${data.phone ?? null}, ${data.source}, ${data.notes ?? null}, ${data.status ?? "NEW"}, ${request.user!.id}) RETURNING *`; response.status(201).json({ data: rows[0] }); } catch { response.status(503).json({ message: "Unable to save lead to the database" }); } });
-app.patch("/api/leads/:id", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request, response) => {
+app.post("/api/notifications/read-all", requireAuth, async (request: AuthRequest, response) => {
+  try {
+    await withDbTimeout(sql`UPDATE notifications SET is_read = true WHERE user_id = ${request.user!.id} AND is_read = false`, 800);
+    response.status(204).send();
+  } catch {
+    response.status(204).send();
+  }
+});
+app.post("/api/notifications/clear-read", requireAuth, async (request: AuthRequest, response) => {
+  try {
+    await withDbTimeout(sql`UPDATE notifications SET hidden_from_bell = true WHERE user_id = ${request.user!.id} AND is_read = true`, 800);
+    response.status(204).send();
+  } catch {
+    response.status(204).send();
+  }
+});
+app.get("/api/leads", requireAuth, async (_request: AuthRequest, response) => {
+  try {
+    const rows = await withDbTimeout(sql`SELECT * FROM leads ORDER BY created_at DESC`, 1200);
+    response.json({ data: rows });
+  } catch {
+    const fallback = await listFallbackLeads();
+    response.json({ data: fallback, offline: true });
+  }
+});
+app.post("/api/leads", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request: AuthRequest, response) => {
+  const parsed = leadInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Invalid lead", errors: parsed.error.flatten() }); return; }
+  const data = parsed.data;
+  try {
+    const rows = await withDbTimeout(sql`INSERT INTO leads (full_name, company, email, phone, source, notes, status, assigned_to_id) VALUES (${data.fullName}, ${data.company ?? null}, ${data.email ?? null}, ${data.phone ?? null}, ${data.source}, ${data.notes ?? null}, ${data.status ?? "NEW"}, ${request.user!.id}) RETURNING *`, 1200);
+    response.status(201).json({ data: rows[0] });
+  } catch {
+    const lead = await addFallbackLead({
+      full_name: data.fullName,
+      company: data.company ?? null,
+      email: data.email ?? null,
+      phone: data.phone ?? null,
+      source: data.source,
+      notes: data.notes ?? null,
+      assigned_to_id: request.user!.id,
+    });
+    response.status(201).json({ data: lead, fallback: true });
+  }
+});
+app.patch("/api/leads/:id", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
   const parsed = leadUpdateInput.safeParse(request.body);
   if (!parsed.success) { response.status(400).json({ message:"Invalid lead update", errors:parsed.error.flatten() }); return; }
   const data = parsed.data;
   try {
-    const rows = await sql`UPDATE leads SET full_name = COALESCE(${data.fullName ?? null}, full_name), company = CASE WHEN ${data.company !== undefined} THEN ${data.company ?? null} ELSE company END, email = CASE WHEN ${data.email !== undefined} THEN ${data.email ?? null} ELSE email END, phone = CASE WHEN ${data.phone !== undefined} THEN ${data.phone ?? null} ELSE phone END, source = COALESCE(${data.source ?? null}, source), notes = CASE WHEN ${data.notes !== undefined} THEN ${data.notes ?? null} ELSE notes END, status = COALESCE(${data.status ?? null}, status) WHERE id = ${String(request.params.id)} RETURNING *`;
+    const rows = await withDbTimeout(sql`UPDATE leads SET full_name = COALESCE(${data.fullName ?? null}, full_name), company = CASE WHEN ${data.company !== undefined} THEN ${data.company ?? null} ELSE company END, email = CASE WHEN ${data.email !== undefined} THEN ${data.email ?? null} ELSE email END, phone = CASE WHEN ${data.phone !== undefined} THEN ${data.phone ?? null} ELSE phone END, source = COALESCE(${data.source ?? null}, source), notes = CASE WHEN ${data.notes !== undefined} THEN ${data.notes ?? null} ELSE notes END, status = COALESCE(${data.status ?? null}, status) WHERE id = ${String(request.params.id)} RETURNING *`, 1200);
     if (!rows[0]) { response.status(404).json({ message:"Lead not found" }); return; }
     response.json({ data:rows[0] });
-  } catch { response.status(503).json({ message:"Unable to save lead changes" }); }
+  } catch {
+    const updated = await updateFallbackLead(String(request.params.id), {
+      ...(data.fullName ? { full_name: data.fullName } : {}),
+      ...(data.company !== undefined ? { company: data.company } : {}),
+      ...(data.email !== undefined ? { email: data.email } : {}),
+      ...(data.phone !== undefined ? { phone: data.phone } : {}),
+      ...(data.source ? { source: data.source } : {}),
+      ...(data.notes !== undefined ? { notes: data.notes } : {}),
+      ...(data.status ? { status: data.status } : {}),
+    });
+    if (!updated) { response.status(404).json({ message:"Lead not found" }); return; }
+    response.json({ data: updated, fallback: true });
+  }
 });
-app.delete("/api/leads/:id", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request, response) => {
-  try { const rows = await sql`DELETE FROM leads WHERE id = ${String(request.params.id)} RETURNING id`; if (!rows[0]) { response.status(404).json({ message:"Lead not found" }); return; } response.status(204).send(); }
-  catch { response.status(503).json({ message:"Unable to delete lead" }); }
-});
-app.post("/api/leads/:id/convert", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => {
+app.delete("/api/leads/:id", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
   try {
-    const rows = await sql`
+    const rows = await withDbTimeout(sql`DELETE FROM leads WHERE id = ${String(request.params.id)} RETURNING id`, 1200);
+    if (!rows[0]) { response.status(404).json({ message:"Lead not found" }); return; }
+    response.status(204).send();
+  } catch {
+    const deleted = await deleteFallbackLead(String(request.params.id));
+    if (!deleted) { response.status(404).json({ message:"Lead not found" }); return; }
+    response.status(204).send();
+  }
+});
+app.post("/api/leads/:id/convert", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request: AuthRequest, response) => {
+  try {
+    const rows = await withDbTimeout(sql`
       WITH source_lead AS (
         SELECT id, full_name, company, email, phone FROM leads
         WHERE id = ${String(request.params.id)} AND customer_id IS NULL AND status <> 'CONVERTED'::lead_status
@@ -145,119 +312,431 @@ app.post("/api/leads/:id/convert", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"
         UPDATE leads SET status = 'CONVERTED', customer_id = (SELECT id FROM linked_client LIMIT 1), converted_at = now()
         WHERE id = (SELECT id FROM source_lead) RETURNING *
       ) SELECT converted_lead.*, (SELECT row_to_json(linked_client) FROM linked_client LIMIT 1) AS client FROM converted_lead
-    `;
+    `, 1500);
     if (!rows[0]) {
       const lead = await sql`SELECT id, customer_id, status FROM leads WHERE id = ${String(request.params.id)} LIMIT 1`;
       response.status(lead[0] ? 409 : 404).json({ message:lead[0] ? "Lead has already been converted" : "Lead not found" }); return;
     }
     response.json({ data:rows[0], client:rows[0].client });
   } catch {
-    response.status(503).json({ message: "Unable to save the conversion to the database" });
+    const res = await convertFallbackLead(String(request.params.id));
+    if (!res) { response.status(404).json({ message: "Lead not found" }); return; }
+    response.json({ data: res, client: res.client, fallback: true });
   }
 });
-app.get("/api/followups", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (_request, response) => { try { const rows = await sql`SELECT * FROM followups ORDER BY followup_date ASC, followup_time ASC NULLS LAST`; response.json({ data: rows }); } catch { response.status(503).json({ message:"Unable to load follow-ups from the database" }); } });
-app.post("/api/followups", requireAuth, allow("SUPER_ADMIN"), async (request, response) => { const parsed = followupInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid follow-up", errors: parsed.error.flatten() }); return; } const data = parsed.data; try { const rows = await sql`INSERT INTO followups (lead_id, lead_name, company, property, type, followup_date, followup_time, assigned_to, priority, status, notes) VALUES (${data.leadId ?? null}, ${data.leadName}, ${data.company ?? null}, ${data.property ?? null}, ${data.type}, ${data.date}, ${data.time ?? null}, ${data.assignedTo ?? null}, ${data.priority ?? null}, ${data.status ?? "Scheduled"}, ${data.notes ?? null}) RETURNING *`; response.status(201).json({ data: rows[0] }); } catch { response.status(503).json({ message: "Unable to save follow-up to the database" }); } });
-app.patch("/api/followups/:id", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request, response) => {
+app.get("/api/followups", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (_request, response) => {
+  try {
+    const rows = await withDbTimeout(sql`SELECT * FROM followups ORDER BY followup_date ASC, followup_time ASC NULLS LAST`, 1200);
+    response.json({ data: rows });
+  } catch {
+    response.json({ data: await listFallbackFollowups(), fallback: true });
+  }
+});
+app.post("/api/followups", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
+  const parsed = followupInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Invalid follow-up", errors: parsed.error.flatten() }); return; }
+  const data = parsed.data;
+  try {
+    const rows = await withDbTimeout(sql`INSERT INTO followups (lead_id, lead_name, company, property, type, followup_date, followup_time, assigned_to, priority, status, notes) VALUES (${data.leadId ?? null}, ${data.leadName}, ${data.company ?? null}, ${data.property ?? null}, ${data.type}, ${data.date}, ${data.time ?? null}, ${data.assignedTo ?? null}, ${data.priority ?? null}, ${data.status ?? "Scheduled"}, ${data.notes ?? null}) RETURNING *`, 1200);
+    response.status(201).json({ data: rows[0] });
+  } catch {
+    const followup = await addFallbackFollowup({
+      lead_id: data.leadId ?? null,
+      lead_name: data.leadName,
+      company: data.company ?? null,
+      property: data.property ?? null,
+      type: data.type,
+      followup_date: data.date,
+      followup_time: data.time ?? null,
+      assigned_to: data.assignedTo ?? null,
+      priority: data.priority ?? null,
+      status: data.status ?? "Scheduled",
+      notes: data.notes ?? null,
+    });
+    response.status(201).json({ data: followup, fallback: true });
+  }
+});
+app.patch("/api/followups/:id", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
   const parsed = followupUpdateInput.safeParse(request.body);
   if (!parsed.success) { response.status(400).json({ message:"Invalid follow-up update", errors:parsed.error.flatten() }); return; }
   const data = parsed.data;
   try {
     const markCompleted = data.completed === true || data.status === "Completed";
-    const rows = await sql`UPDATE followups SET lead_name = COALESCE(${data.leadName ?? null}, lead_name), company = CASE WHEN ${data.company !== undefined} THEN ${data.company ?? null} ELSE company END, property = CASE WHEN ${data.property !== undefined} THEN ${data.property ?? null} ELSE property END, type = COALESCE(${data.type ?? null}, type), followup_date = COALESCE(${data.date ?? null}, followup_date), followup_time = CASE WHEN ${data.time !== undefined} THEN ${data.time ?? null} ELSE followup_time END, assigned_to = CASE WHEN ${data.assignedTo !== undefined} THEN ${data.assignedTo ?? null} ELSE assigned_to END, priority = CASE WHEN ${data.priority !== undefined} THEN ${data.priority ?? null} ELSE priority END, status = CASE WHEN ${markCompleted} THEN 'Completed' WHEN ${data.status ?? null} IS NOT NULL THEN ${data.status ?? null} ELSE status END, notes = CASE WHEN ${data.notes !== undefined} THEN ${data.notes ?? null} ELSE notes END, completed_at = CASE WHEN ${markCompleted} THEN COALESCE(completed_at, now()) WHEN ${data.completed === false} THEN NULL ELSE completed_at END, updated_at = now() WHERE id = ${String(request.params.id)} RETURNING *`;
+    const rows = await withDbTimeout(sql`UPDATE followups SET lead_name = COALESCE(${data.leadName ?? null}, lead_name), company = CASE WHEN ${data.company !== undefined} THEN ${data.company ?? null} ELSE company END, property = CASE WHEN ${data.property !== undefined} THEN ${data.property ?? null} ELSE property END, type = COALESCE(${data.type ?? null}, type), followup_date = COALESCE(${data.date ?? null}, followup_date), followup_time = CASE WHEN ${data.time !== undefined} THEN ${data.time ?? null} ELSE followup_time END, assigned_to = CASE WHEN ${data.assignedTo !== undefined} THEN ${data.assignedTo ?? null} ELSE assigned_to END, priority = CASE WHEN ${data.priority !== undefined} THEN ${data.priority ?? null} ELSE priority END, status = CASE WHEN ${markCompleted} THEN 'Completed' WHEN ${data.status ?? null} IS NOT NULL THEN ${data.status ?? null} ELSE status END, notes = CASE WHEN ${data.notes !== undefined} THEN ${data.notes ?? null} ELSE notes END, completed_at = CASE WHEN ${markCompleted} THEN COALESCE(completed_at, now()) WHEN ${data.completed === false} THEN NULL ELSE completed_at END, updated_at = now() WHERE id = ${String(request.params.id)} RETURNING *`, 1200);
     if (!rows[0]) { response.status(404).json({ message:"Follow-up not found" }); return; }
     response.json({ data:rows[0] });
-  } catch { response.status(503).json({ message:"Unable to save follow-up changes" }); }
+  } catch {
+    const markCompleted = data.completed === true || data.status === "Completed";
+    const updated = await updateFallbackFollowup(String(request.params.id), {
+      ...(data.leadName ? { lead_name: data.leadName } : {}),
+      ...(data.company !== undefined ? { company: data.company } : {}),
+      ...(data.property !== undefined ? { property: data.property } : {}),
+      ...(data.type ? { type: data.type } : {}),
+      ...(data.date ? { followup_date: data.date } : {}),
+      ...(data.time !== undefined ? { followup_time: data.time } : {}),
+      ...(data.assignedTo !== undefined ? { assigned_to: data.assignedTo } : {}),
+      ...(data.priority !== undefined ? { priority: data.priority } : {}),
+      ...(markCompleted ? { status: "Completed" } : data.status ? { status: data.status } : {}),
+      ...(data.notes !== undefined ? { notes: data.notes } : {}),
+    });
+    if (!updated) { response.status(404).json({ message:"Follow-up not found" }); return; }
+    response.json({ data: updated, fallback: true });
+  }
 });
-app.post("/api/followups/:id/complete", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request, response) => {
-  try { const rows = await sql`UPDATE followups SET status = 'Completed', completed_at = COALESCE(completed_at, now()), updated_at = now() WHERE id = ${String(request.params.id)} RETURNING *`; if (!rows[0]) { response.status(404).json({ message:"Follow-up not found" }); return; } response.json({ data:rows[0] }); }
-  catch { response.status(503).json({ message:"Unable to complete follow-up" }); }
+app.post("/api/followups/:id/complete", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
+  try {
+    const rows = await withDbTimeout(sql`UPDATE followups SET status = 'Completed', completed_at = COALESCE(completed_at, now()), updated_at = now() WHERE id = ${String(request.params.id)} RETURNING *`, 1200);
+    if (!rows[0]) { response.status(404).json({ message:"Follow-up not found" }); return; }
+    response.json({ data:rows[0] });
+  } catch {
+    const updated = await completeFallbackFollowup(String(request.params.id));
+    if (!updated) { response.status(404).json({ message:"Follow-up not found" }); return; }
+    response.json({ data: updated, fallback: true });
+  }
 });
-app.delete("/api/followups/:id", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request, response) => {
-  try { const rows = await sql`DELETE FROM followups WHERE id = ${String(request.params.id)} RETURNING id`; if (!rows[0]) { response.status(404).json({ message:"Follow-up not found" }); return; } response.status(204).send(); }
-  catch { response.status(503).json({ message:"Unable to delete follow-up" }); }
+app.delete("/api/followups/:id", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
+  try {
+    const rows = await withDbTimeout(sql`DELETE FROM followups WHERE id = ${String(request.params.id)} RETURNING id`, 1200);
+    if (!rows[0]) { response.status(404).json({ message:"Follow-up not found" }); return; }
+    response.status(204).send();
+  } catch {
+    const deleted = await deleteFallbackFollowup(String(request.params.id));
+    if (!deleted) { response.status(404).json({ message:"Follow-up not found" }); return; }
+    response.status(204).send();
+  }
 });
-app.get("/api/clients", requireAuth, async (_request, response) => { try { const rows = await sql`SELECT * FROM clients ORDER BY created_at DESC`; response.json({ data: rows }); } catch { response.status(503).json({ message:"Unable to load clients from the database" }); } });
-app.post("/api/clients", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => { const parsed = clientInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid client", errors: parsed.error.flatten() }); return; } const data = parsed.data; try { const rows = await sql`INSERT INTO clients (name, company, email, phone, gst_number) VALUES (${data.name}, ${data.company ?? null}, ${data.email ?? null}, ${data.phone}, ${data.gstNumber ?? null}) RETURNING *`; response.status(201).json({ data: rows[0] }); } catch { response.status(503).json({ message: "Unable to save client to the database" }); } });
-app.get("/api/quotations", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (_request, response) => {
-  try { const rows = await sql`SELECT * FROM quotations ORDER BY created_at DESC`; response.json({ data: rows }); }
-  catch { response.status(503).json({ message:"Unable to load quotations from the database" }); }
+app.get("/api/clients", requireAuth, async (_request, response) => {
+  try {
+    const rows = await withDbTimeout(sql`SELECT * FROM clients ORDER BY created_at DESC`, 1200);
+    response.json({ data: rows });
+  } catch {
+    response.json({ data: await listFallbackClients(), fallback: true });
+  }
 });
-app.post("/api/quotations", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request, response) => {
+app.post("/api/clients", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request: AuthRequest, response) => {
+  const parsed = clientInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Invalid client", errors: parsed.error.flatten() }); return; }
+  const data = parsed.data;
+  try {
+    const rows = await withDbTimeout(sql`INSERT INTO clients (name, company, email, phone, gst_number) VALUES (${data.name}, ${data.company ?? null}, ${data.email ?? null}, ${data.phone}, ${data.gstNumber ?? null}) RETURNING *`, 1200);
+    response.status(201).json({ data: rows[0] });
+  } catch {
+    const client = await addFallbackClient({
+      name: data.name,
+      company: data.company ?? null,
+      email: data.email ?? null,
+      phone: data.phone,
+      gst_number: data.gstNumber ?? null,
+    });
+    response.status(201).json({ data: client, fallback: true });
+  }
+});
+app.get("/api/quotations", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (_request, response) => {
+  try {
+    const rows = await withDbTimeout(sql`SELECT * FROM quotations ORDER BY created_at DESC`, 1200);
+    response.json({ data: rows });
+  } catch {
+    response.json({ data: await listFallbackQuotations(), fallback: true });
+  }
+});
+app.post("/api/quotations", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
   const parsed = quotationInput.safeParse(request.body);
   if (!parsed.success) { response.status(400).json({ message:"Invalid quotation", errors:parsed.error.flatten() }); return; }
   const data = parsed.data;
   try {
     if (data.clientId) {
-      const client = await sql`SELECT id FROM clients WHERE id = ${data.clientId} LIMIT 1`;
+      const client = await withDbTimeout(sql`SELECT id FROM clients WHERE id = ${data.clientId} LIMIT 1`, 800);
       if (!client[0]) { response.status(404).json({ message:"Client not found" }); return; }
     }
-    const rows = await sql`INSERT INTO quotations (quotation_number, client_id, client_name, amount, valid_until, status) VALUES (${`Q-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`}, ${data.clientId ?? null}, ${data.clientName}, ${data.amount}, ${data.validUntil}, ${data.status}) RETURNING *`;
+    const qNum = `Q-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const rows = await withDbTimeout(sql`INSERT INTO quotations (quotation_number, client_id, client_name, amount, valid_until, status) VALUES (${qNum}, ${data.clientId ?? null}, ${data.clientName}, ${data.amount}, ${data.validUntil}, ${data.status}) RETURNING *`, 1200);
     response.status(201).json({ data:rows[0] });
-  } catch { response.status(503).json({ message:"Unable to save quotation to the database" }); }
+  } catch {
+    const quotation = await addFallbackQuotation({
+      quotation_number: `Q-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
+      client_id: data.clientId ?? null,
+      client_name: data.clientName,
+      amount: data.amount,
+      valid_until: data.validUntil,
+      status: data.status,
+    });
+    response.status(201).json({ data: quotation, fallback: true });
+  }
 });
-app.get("/api/invoices", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => { try { const rows = request.user!.role === "SUPER_ADMIN" ? await sql`SELECT invoices.*, clients.name AS client_name, clients.company AS client_company FROM invoices JOIN clients ON clients.id = invoices.client_id ORDER BY invoices.created_at DESC` : await sql`SELECT invoices.*, clients.name AS client_name, clients.company AS client_company FROM invoices JOIN clients ON clients.id = invoices.client_id WHERE invoices.created_by_id = ${request.user!.id} ORDER BY invoices.created_at DESC`; response.json({ data: rows }); } catch { response.json({ data: await listFallbackInvoices(request.user!.role === "SUPER_ADMIN" ? undefined : request.user!.id), fallback: true }); } });
-app.post("/api/invoices", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => { const parsed = invoiceInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid invoice", errors: parsed.error.flatten() }); return; } const data = parsed.data; try { const creator = await sql`SELECT name FROM users WHERE id = ${request.user!.id} LIMIT 1`; if (!creator[0]) { response.status(401).json({ message: "Current user was not found" }); return; } const rows = await sql`INSERT INTO invoices (invoice_number, client_id, total, paid_amount, due_date, created_by_id, created_by_name) VALUES (${data.invoiceNumber}, ${data.clientId}, ${data.total}, ${data.paidAmount ?? 0}, ${data.dueDate}, ${request.user!.id}, ${creator[0].name}) RETURNING *`; response.status(201).json({ data: rows[0] }); } catch { response.status(503).json({ message: "Unable to save invoice to the database" }); } });
-app.get("/api/expenses", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (_request, response) => { const rows = await sql`SELECT * FROM expenses ORDER BY expense_date DESC NULLS LAST, created_at DESC`; response.json({ data: rows }); });
-app.post("/api/expenses", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => { const parsed = expenseInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid expense", errors: parsed.error.flatten() }); return; } const data = parsed.data; const rows = await sql`INSERT INTO expenses (title, category, amount, expense_date, payment_method, description) VALUES (${data.title}, ${data.category}, ${data.amount}, ${data.expenseDate ?? null}, ${data.paymentMethod ?? null}, ${data.description ?? null}) RETURNING *`; response.status(201).json({ data: rows[0] }); });
-app.get("/api/payments", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => { const rows = request.user!.role === "SUPER_ADMIN" ? await sql`SELECT payments.*, invoices.invoice_number FROM payments JOIN invoices ON invoices.id = payments.invoice_id ORDER BY payments.created_at DESC` : await sql`SELECT payments.*, invoices.invoice_number FROM payments JOIN invoices ON invoices.id = payments.invoice_id WHERE payments.created_by_id = ${request.user!.id} ORDER BY payments.created_at DESC`; response.json({ data: rows }); });
+app.get("/api/invoices", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => {
+  try {
+    const rows = request.user!.role === "SUPER_ADMIN"
+      ? await withDbTimeout(sql`SELECT invoices.*, clients.name AS client_name, clients.company AS client_company FROM invoices JOIN clients ON clients.id = invoices.client_id ORDER BY invoices.created_at DESC`, 1200)
+      : await withDbTimeout(sql`SELECT invoices.*, clients.name AS client_name, clients.company AS client_company FROM invoices JOIN clients ON clients.id = invoices.client_id WHERE invoices.created_by_id = ${request.user!.id} ORDER BY invoices.created_at DESC`, 1200);
+    response.json({ data: rows });
+  } catch {
+    response.json({ data: await listFallbackInvoices(request.user!.role === "SUPER_ADMIN" ? undefined : request.user!.id), fallback: true });
+  }
+});
+app.post("/api/invoices", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => {
+  const parsed = invoiceInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Invalid invoice", errors: parsed.error.flatten() }); return; }
+  const data = parsed.data;
+  try {
+    const creator = await withDbTimeout(sql`SELECT name FROM users WHERE id = ${request.user!.id} LIMIT 1`, 800);
+    const creatorName = creator[0]?.name ?? (findDemoUser(request.user!.id)?.name || request.user!.role);
+    const rows = await withDbTimeout(sql`INSERT INTO invoices (invoice_number, client_id, total, paid_amount, due_date, created_by_id, created_by_name) VALUES (${data.invoiceNumber}, ${data.clientId}, ${data.total}, ${data.paidAmount ?? 0}, ${data.dueDate}, ${request.user!.id}, ${creatorName}) RETURNING *`, 1200);
+    response.status(201).json({ data: rows[0] });
+  } catch {
+    const invoice = await addFallbackInvoice({
+      invoice_number: data.invoiceNumber,
+      client_id: data.clientId,
+      client_name: data.clientName ?? "Client",
+      total: data.total,
+      paid_amount: data.paidAmount ?? 0,
+      due_date: data.dueDate,
+      created_by_id: request.user!.id,
+      created_by_name: findDemoUser(request.user!.id)?.name || request.user!.role,
+    });
+    response.status(201).json({ data: invoice, fallback: true });
+  }
+});
+app.get("/api/expenses", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (_request, response) => {
+  try {
+    const rows = await withDbTimeout(sql`SELECT * FROM expenses ORDER BY expense_date DESC NULLS LAST, created_at DESC`, 1200);
+    response.json({ data: rows });
+  } catch {
+    response.json({ data: await listFallbackExpenses(), fallback: true });
+  }
+});
+app.post("/api/expenses", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => {
+  const parsed = expenseInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Invalid expense", errors: parsed.error.flatten() }); return; }
+  const data = parsed.data;
+  try {
+    const rows = await withDbTimeout(sql`INSERT INTO expenses (title, category, amount, expense_date, payment_method, description) VALUES (${data.title}, ${data.category}, ${data.amount}, ${data.expenseDate ?? null}, ${data.paymentMethod ?? null}, ${data.description ?? null}) RETURNING *`, 1200);
+    response.status(201).json({ data: rows[0] });
+  } catch {
+    const expense = await addFallbackExpense({
+      title: data.title,
+      category: data.category,
+      amount: data.amount,
+      expense_date: data.expenseDate ?? null,
+      payment_method: data.paymentMethod ?? null,
+      description: data.description ?? null,
+    });
+    response.status(201).json({ data: expense, fallback: true });
+  }
+});
+app.get("/api/payments", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => {
+  try {
+    const rows = request.user!.role === "SUPER_ADMIN"
+      ? await withDbTimeout(sql`SELECT payments.*, invoices.invoice_number FROM payments JOIN invoices ON invoices.id = payments.invoice_id ORDER BY payments.created_at DESC`, 1200)
+      : await withDbTimeout(sql`SELECT payments.*, invoices.invoice_number FROM payments JOIN invoices ON invoices.id = payments.invoice_id WHERE payments.created_by_id = ${request.user!.id} ORDER BY payments.created_at DESC`, 1200);
+    response.json({ data: rows });
+  } catch {
+    response.json({ data: await listFallbackPayments(), fallback: true });
+  }
+});
 app.get("/api/payments/summary", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => {
   const summary = "SELECT i.id AS invoice_id, i.invoice_number, i.total AS invoice_total, i.created_by_name AS invoice_created_by_name, c.name AS client_name, c.company AS client_company, i.due_date, COALESCE(SUM(p.amount), 0) AS total_paid, MAX(COALESCE(p.payment_date, p.created_at::date)) AS latest_payment_date, (SELECT method FROM payments WHERE invoice_id = i.id ORDER BY COALESCE(payment_date, created_at::date) DESC, created_at DESC LIMIT 1) AS payment_method, (SELECT created_by_name FROM payments WHERE invoice_id = i.id ORDER BY COALESCE(payment_date, created_at::date) DESC, created_at DESC LIMIT 1) AS payment_created_by_name FROM invoices i JOIN clients c ON c.id = i.client_id LEFT JOIN payments p ON p.invoice_id = i.id";
-  const rows = request.user!.role === "SUPER_ADMIN"
-    ? await sql.query(`${summary} GROUP BY i.id, i.invoice_number, i.total, i.created_by_name, c.name, c.company, i.due_date ORDER BY i.created_at DESC`)
-    : await sql.query(`${summary} WHERE i.created_by_id = $1 GROUP BY i.id, i.invoice_number, i.total, i.created_by_name, c.name, c.company, i.due_date ORDER BY i.created_at DESC`, [request.user!.id]);
-  response.json({ data: rows });
+  try {
+    const rows = request.user!.role === "SUPER_ADMIN"
+      ? await withDbTimeout(sql.query(`${summary} GROUP BY i.id, i.invoice_number, i.total, i.created_by_name, c.name, c.company, i.due_date ORDER BY i.created_at DESC`), 1200)
+      : await withDbTimeout(sql.query(`${summary} WHERE i.created_by_id = $1 GROUP BY i.id, i.invoice_number, i.total, i.created_by_name, c.name, c.company, i.due_date ORDER BY i.created_at DESC`, [request.user!.id]), 1200);
+    response.json({ data: rows });
+  } catch {
+    const invoices = await listFallbackInvoices(request.user!.role === "SUPER_ADMIN" ? undefined : request.user!.id);
+    const payments = await listFallbackPayments();
+    const summaryRows = invoices.map(inv => {
+      const invPayments = payments.filter(p => p.invoice_id === inv.id || p.invoice_number === inv.invoice_number);
+      const totalPaid = invPayments.reduce((acc, curr) => acc + curr.amount, 0);
+      const latest = invPayments[0];
+      return {
+        invoice_id: inv.id,
+        invoice_number: inv.invoice_number,
+        invoice_total: inv.total,
+        invoice_created_by_name: inv.created_by_name || "Admin",
+        client_name: inv.client_name,
+        client_company: null,
+        due_date: inv.due_date,
+        total_paid: totalPaid,
+        latest_payment_date: latest?.payment_date || null,
+        payment_method: latest?.method || null,
+        payment_created_by_name: latest?.created_by_name || null,
+      };
+    });
+    response.json({ data: summaryRows, fallback: true });
+  }
 });
 app.post("/api/payments", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async (request: AuthRequest, response) => {
   const parsed = paymentInput.safeParse(request.body);
   if (!parsed.success) { response.status(400).json({ message: "Invalid payment", errors: parsed.error.flatten() }); return; }
   const data = parsed.data;
-  const invoice = request.user!.role === "SUPER_ADMIN" ? await sql`SELECT id, total FROM invoices WHERE id = ${data.invoiceId} LIMIT 1` : await sql`SELECT id, total FROM invoices WHERE id = ${data.invoiceId} AND created_by_id = ${request.user!.id} LIMIT 1`;
-  if (!invoice[0]) { response.status(404).json({ message: "Invoice not found" }); return; }
-  const paidRows = await sql`SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE invoice_id = ${data.invoiceId}`;
-  const alreadyPaid = Number(paidRows[0]?.total_paid ?? 0); const remaining = Number(invoice[0].total) - alreadyPaid;
-  if (data.amount > remaining) { response.status(400).json({ message: `Payment exceeds the remaining balance of ${remaining.toFixed(2)}.` }); return; }
-  const creator = await sql`SELECT name FROM users WHERE id = ${request.user!.id} LIMIT 1`;
-  if (!creator[0]) { response.status(401).json({ message: "Current user was not found" }); return; }
-  const rows = await sql`INSERT INTO payments (invoice_id, amount, method, payment_date, notes, created_by_id, created_by_name) VALUES (${data.invoiceId}, ${data.amount}, ${data.method}, ${data.paymentDate ?? null}, ${data.notes ?? null}, ${request.user!.id}, ${creator[0].name}) RETURNING *`;
-  await sql`UPDATE invoices SET paid_amount = ${alreadyPaid + data.amount} WHERE id = ${data.invoiceId}`;
-  response.status(201).json({ data: rows[0] });
+  try {
+    const invoice = request.user!.role === "SUPER_ADMIN"
+      ? await withDbTimeout(sql`SELECT id, total FROM invoices WHERE id = ${data.invoiceId} LIMIT 1`, 800)
+      : await withDbTimeout(sql`SELECT id, total FROM invoices WHERE id = ${data.invoiceId} AND created_by_id = ${request.user!.id} LIMIT 1`, 800);
+    if (!invoice[0]) { response.status(404).json({ message: "Invoice not found" }); return; }
+    const paidRows = await withDbTimeout(sql`SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE invoice_id = ${data.invoiceId}`, 800);
+    const alreadyPaid = Number(paidRows[0]?.total_paid ?? 0); const remaining = Number(invoice[0].total) - alreadyPaid;
+    if (data.amount > remaining) { response.status(400).json({ message: `Payment exceeds the remaining balance of ${remaining.toFixed(2)}.` }); return; }
+    const creator = await withDbTimeout(sql`SELECT name FROM users WHERE id = ${request.user!.id} LIMIT 1`, 800);
+    const creatorName = creator[0]?.name ?? (findDemoUser(request.user!.id)?.name || request.user!.role);
+    const rows = await withDbTimeout(sql`INSERT INTO payments (invoice_id, amount, method, payment_date, notes, created_by_id, created_by_name) VALUES (${data.invoiceId}, ${data.amount}, ${data.method}, ${data.paymentDate ?? null}, ${data.notes ?? null}, ${request.user!.id}, ${creatorName}) RETURNING *`, 1200);
+    await withDbTimeout(sql`UPDATE invoices SET paid_amount = ${alreadyPaid + data.amount} WHERE id = ${data.invoiceId}`, 800);
+    response.status(201).json({ data: rows[0] });
+  } catch {
+    const payment = await addFallbackPayment({
+      invoice_id: data.invoiceId,
+      amount: data.amount,
+      method: data.method,
+      payment_date: data.paymentDate ?? null,
+      notes: data.notes ?? null,
+      created_by_id: request.user!.id,
+      created_by_name: findDemoUser(request.user!.id)?.name || request.user!.role,
+    });
+    response.status(201).json({ data: payment, fallback: true });
+  }
 });
 app.get("/api/developers", requireAuth, allow("SUPER_ADMIN"), async (_request, response) => {
   try {
-  const rows = await sql`
-    SELECT u.id, u.name, u.email, u.role, u.created_at,
-      COUNT(p.id)::int AS assigned_projects,
-      COUNT(p.id) FILTER (WHERE p.status = 'COMPLETED')::int AS completed_projects,
-      COUNT(p.id) FILTER (WHERE p.status IN ('PLANNING', 'IN_PROGRESS'))::int AS active_projects,
-      COALESCE(ROUND(AVG(COALESCE(latest_update.progress, CASE WHEN p.status = 'COMPLETED' THEN 100 ELSE 0 END)))::int, 0) AS average_progress,
-      MAX(COALESCE(latest_update.created_at, p.updated_at)) AS last_activity_at
-    FROM users u
-    LEFT JOIN projects p ON p.assigned_developer_id = u.id
-    LEFT JOIN LATERAL (
-      SELECT progress, created_at FROM project_updates
-      WHERE project_id = p.id ORDER BY created_at DESC LIMIT 1
-    ) latest_update ON true
-    WHERE u.role = 'DEVELOPER'
-    GROUP BY u.id, u.name, u.email, u.role, u.created_at
-    ORDER BY last_activity_at DESC NULLS LAST, u.created_at DESC
-  `;
-  response.json({ data: rows });
-  } catch { response.json({ data: await fallbackDeveloperOverview(), fallback: true }); }
+    const rows = await withDbTimeout(sql`
+      SELECT u.id, u.name, u.email, u.role, u.created_at,
+        COUNT(p.id)::int AS assigned_projects,
+        COUNT(p.id) FILTER (WHERE p.status = 'COMPLETED')::int AS completed_projects,
+        COUNT(p.id) FILTER (WHERE p.status IN ('PLANNING', 'IN_PROGRESS'))::int AS active_projects,
+        COALESCE(ROUND(AVG(COALESCE(latest_update.progress, CASE WHEN p.status = 'COMPLETED' THEN 100 ELSE 0 END)))::int, 0) AS average_progress,
+        MAX(COALESCE(latest_update.created_at, p.updated_at)) AS last_activity_at
+      FROM users u
+      LEFT JOIN projects p ON p.assigned_developer_id = u.id
+      LEFT JOIN LATERAL (
+        SELECT progress, created_at FROM project_updates
+        WHERE project_id = p.id ORDER BY created_at DESC LIMIT 1
+      ) latest_update ON true
+      WHERE u.role = 'DEVELOPER'
+      GROUP BY u.id, u.name, u.email, u.role, u.created_at
+      ORDER BY last_activity_at DESC NULLS LAST, u.created_at DESC
+    `, 1200);
+    response.json({ data: rows });
+  } catch {
+    response.json({ data: await fallbackDeveloperOverview(), fallback: true });
+  }
 });
-app.post("/api/developers", requireAuth, allow("SUPER_ADMIN"), async (request, response) => { const parsed = developerInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid developer", errors: parsed.error.flatten() }); return; } const passwordHash = await bcrypt.hash(parsed.data.password, 12); try { const rows = await sql`INSERT INTO users (name, email, password_hash, role, must_change_password) VALUES (${parsed.data.name}, ${parsed.data.email.toLowerCase()}, ${passwordHash}, 'DEVELOPER', true) RETURNING id, name, email, role, created_at`; response.status(201).json({ data: rows[0] }); } catch { response.status(201).json({ data: await createFallbackDeveloper(parsed.data.name, parsed.data.email, passwordHash), fallback: true }); } });
-app.delete("/api/developers/:id", requireAuth, allow("SUPER_ADMIN"), async (request, response) => { const developerId = String(request.params.id); try { const assigned = await sql`SELECT COUNT(*)::int AS count FROM projects WHERE assigned_developer_id = ${developerId}`; if (Number(assigned[0]?.count ?? 0) > 0) { response.status(409).json({ message: "Reassign this developer's projects before removing the account" }); return; } const removed = await sql`DELETE FROM users WHERE id = ${developerId} AND role = 'DEVELOPER' RETURNING id`; if (!removed[0]) { response.status(404).json({ message: "Developer not found" }); return; } response.status(204).send(); } catch { try { await removeFallbackDeveloper(developerId); response.status(204).send(); } catch (error) { response.status(409).json({ message: error instanceof Error ? error.message : "Unable to remove developer" }); } } });
-app.get("/api/projects", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => { try { const rows = request.user!.role === "DEVELOPER" ? await sql`SELECT projects.*, users.name AS developer_name, COALESCE(latest_update.progress, CASE WHEN projects.status = 'COMPLETED' THEN 100 ELSE 0 END) AS progress FROM projects JOIN users ON users.id = projects.assigned_developer_id LEFT JOIN LATERAL (SELECT progress FROM project_updates WHERE project_id = projects.id ORDER BY created_at DESC LIMIT 1) latest_update ON true WHERE projects.assigned_developer_id = ${request.user!.id} ORDER BY projects.updated_at DESC` : await sql`SELECT projects.*, users.name AS developer_name, COALESCE(latest_update.progress, CASE WHEN projects.status = 'COMPLETED' THEN 100 ELSE 0 END) AS progress FROM projects JOIN users ON users.id = projects.assigned_developer_id LEFT JOIN LATERAL (SELECT progress FROM project_updates WHERE project_id = projects.id ORDER BY created_at DESC LIMIT 1) latest_update ON true ORDER BY projects.updated_at DESC`; response.json({ data: rows }); } catch { response.json({ data: await listFallbackProjects(request.user!), fallback: true }); } });
-app.post("/api/projects", requireAuth, allow("SUPER_ADMIN"), async (request: AuthRequest, response) => { const parsed = projectInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid project", errors: parsed.error.flatten() }); return; } const data = parsed.data; try { const rows = await sql`INSERT INTO projects (name, client_name, description, status, priority, due_date, assigned_developer_id, created_by_id) VALUES (${data.name}, ${data.clientName ?? null}, ${data.description ?? null}, ${data.status}, ${data.priority}, ${data.dueDate ?? null}, ${data.assignedDeveloperId}, ${request.user!.id}) RETURNING *`; response.status(201).json({ data: rows[0] }); } catch { response.status(201).json({ data: await createFallbackProject({ name: data.name, client_name: data.clientName ?? null, description: data.description ?? null, status: data.status, priority: data.priority, due_date: data.dueDate ?? null, assigned_developer_id: data.assignedDeveloperId, created_by_id: request.user!.id }), fallback: true }); } });
-app.patch("/api/projects/:id/status", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => { const parsed = projectStatusInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid project status" }); return; } const projectId = String(request.params.id); try { const rows = await sql`UPDATE projects SET status = ${parsed.data.status}, progress_percentage = CASE WHEN ${parsed.data.status} = 'COMPLETED' THEN 100 ELSE progress_percentage END, updated_at = now() WHERE id = ${projectId} AND (${request.user!.role} = 'SUPER_ADMIN' OR assigned_developer_id = ${request.user!.id}) RETURNING *`; if (!rows[0]) { response.status(403).json({ message: "You cannot update this project" }); return; } response.json({ data: rows[0] }); } catch { response.status(503).json({ message:"Unable to update project status" }); } });
-app.get("/api/projects/:id/updates", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => { const projectId = String(request.params.id); try { const project = await sql`SELECT assigned_developer_id FROM projects WHERE id = ${projectId} LIMIT 1`; if (!project[0] || (request.user!.role === "DEVELOPER" && project[0].assigned_developer_id !== request.user!.id)) { response.status(403).json({ message: "You cannot view this project" }); return; } const rows = await sql`SELECT project_updates.*, users.name AS author_name FROM project_updates JOIN users ON users.id = project_updates.author_id WHERE project_updates.project_id = ${projectId} ORDER BY project_updates.created_at DESC`; response.json({ data: rows }); } catch { const project = await fallbackProject(projectId); if (!project || (request.user!.role === "DEVELOPER" && project.assigned_developer_id !== request.user!.id)) { response.status(403).json({ message: "You cannot view this project" }); return; } response.json({ data: await listFallbackUpdates(projectId), fallback: true }); } });
-app.post("/api/projects/:id/updates", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => { const parsed = projectUpdateInput.safeParse(request.body); if (!parsed.success) { response.status(400).json({ message: "Invalid project update", errors: parsed.error.flatten() }); return; } const data = parsed.data; const projectId = String(request.params.id); try { const project = await sql`SELECT id, assigned_developer_id, status, progress_percentage FROM projects WHERE id = ${projectId} LIMIT 1`; if (!project[0] || (request.user!.role === "DEVELOPER" && project[0].assigned_developer_id !== request.user!.id)) { response.status(403).json({ message: "You cannot update this project" }); return; } const nextStatus = data.status ?? (data.progress === 100 ? "COMPLETED" : data.progress > 0 ? "IN_PROGRESS" : project[0].status); if (nextStatus === "COMPLETED" && data.progress < 100) { response.status(400).json({ message:"Completed projects must be 100% complete" }); return; } const nextProgress = nextStatus === "COMPLETED" ? 100 : data.progress; const rows = await sql`INSERT INTO project_updates (project_id, author_id, message, progress, old_status, new_status, old_percentage, new_percentage) VALUES (${projectId}, ${request.user!.id}, ${data.message}, ${nextProgress}, ${project[0].status}, ${nextStatus}, ${project[0].progress_percentage ?? 0}, ${nextProgress}) RETURNING *`; await sql`UPDATE projects SET status = ${nextStatus}, progress_percentage = ${nextProgress}, updated_at = now() WHERE id = ${projectId}`; response.status(201).json({ data: rows[0], project:{ id:projectId, status:nextStatus, progress:nextProgress } }); } catch { response.status(503).json({ message:"Unable to save project progress" }); } });
+app.post("/api/developers", requireAuth, allow("SUPER_ADMIN"), async (request, response) => {
+  const parsed = developerInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Invalid developer", errors: parsed.error.flatten() }); return; }
+  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+  try {
+    const rows = await withDbTimeout(sql`INSERT INTO users (name, email, password_hash, role, must_change_password) VALUES (${parsed.data.name}, ${parsed.data.email.toLowerCase()}, ${passwordHash}, 'DEVELOPER', true) RETURNING id, name, email, role, created_at`, 1200);
+    response.status(201).json({ data: rows[0] });
+  } catch {
+    response.status(201).json({ data: await createFallbackDeveloper(parsed.data.name, parsed.data.email, passwordHash), fallback: true });
+  }
+});
+app.delete("/api/developers/:id", requireAuth, allow("SUPER_ADMIN"), async (request, response) => {
+  const developerId = String(request.params.id);
+  try {
+    const assigned = await withDbTimeout(sql`SELECT COUNT(*)::int AS count FROM projects WHERE assigned_developer_id = ${developerId}`, 800);
+    if (Number(assigned[0]?.count ?? 0) > 0) { response.status(409).json({ message: "Reassign this developer's projects before removing the account" }); return; }
+    const removed = await withDbTimeout(sql`DELETE FROM users WHERE id = ${developerId} AND role = 'DEVELOPER' RETURNING id`, 1000);
+    if (!removed[0]) { response.status(404).json({ message: "Developer not found" }); return; }
+    response.status(204).send();
+  } catch {
+    try {
+      await removeFallbackDeveloper(developerId);
+      response.status(204).send();
+    } catch (error) {
+      response.status(409).json({ message: error instanceof Error ? error.message : "Unable to remove developer" });
+    }
+  }
+});
+app.get("/api/projects", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => {
+  try {
+    const rows = request.user!.role === "DEVELOPER"
+      ? await withDbTimeout(sql`SELECT projects.*, users.name AS developer_name, COALESCE(latest_update.progress, CASE WHEN projects.status = 'COMPLETED' THEN 100 ELSE 0 END) AS progress FROM projects JOIN users ON users.id = projects.assigned_developer_id LEFT JOIN LATERAL (SELECT progress FROM project_updates WHERE project_id = projects.id ORDER BY created_at DESC LIMIT 1) latest_update ON true WHERE projects.assigned_developer_id = ${request.user!.id} ORDER BY projects.updated_at DESC`, 1200)
+      : await withDbTimeout(sql`SELECT projects.*, users.name AS developer_name, COALESCE(latest_update.progress, CASE WHEN projects.status = 'COMPLETED' THEN 100 ELSE 0 END) AS progress FROM projects JOIN users ON users.id = projects.assigned_developer_id LEFT JOIN LATERAL (SELECT progress FROM project_updates WHERE project_id = projects.id ORDER BY created_at DESC LIMIT 1) latest_update ON true ORDER BY projects.updated_at DESC`, 1200);
+    response.json({ data: rows });
+  } catch {
+    response.json({ data: await listFallbackProjects(request.user!), fallback: true });
+  }
+});
+app.post("/api/projects", requireAuth, allow("SUPER_ADMIN"), async (request: AuthRequest, response) => {
+  const parsed = projectInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Invalid project", errors: parsed.error.flatten() }); return; }
+  const data = parsed.data;
+  try {
+    const rows = await withDbTimeout(sql`INSERT INTO projects (name, client_name, description, status, priority, due_date, assigned_developer_id, created_by_id) VALUES (${data.name}, ${data.clientName ?? null}, ${data.description ?? null}, ${data.status}, ${data.priority}, ${data.dueDate ?? null}, ${data.assignedDeveloperId}, ${request.user!.id}) RETURNING *`, 1200);
+    response.status(201).json({ data: rows[0] });
+  } catch {
+    response.status(201).json({ data: await createFallbackProject({ name: data.name, client_name: data.clientName ?? null, description: data.description ?? null, status: data.status, priority: data.priority, due_date: data.dueDate ?? null, assigned_developer_id: data.assignedDeveloperId, created_by_id: request.user!.id }), fallback: true });
+  }
+});
+app.patch("/api/projects/:id/status", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => {
+  const parsed = projectStatusInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Invalid project status" }); return; }
+  const projectId = String(request.params.id);
+  try {
+    const rows = await withDbTimeout(sql`UPDATE projects SET status = ${parsed.data.status}, progress_percentage = CASE WHEN ${parsed.data.status} = 'COMPLETED' THEN 100 ELSE progress_percentage END, updated_at = now() WHERE id = ${projectId} AND (${request.user!.role} = 'SUPER_ADMIN' OR assigned_developer_id = ${request.user!.id}) RETURNING *`, 1200);
+    if (!rows[0]) { response.status(403).json({ message: "You cannot update this project" }); return; }
+    response.json({ data: rows[0] });
+  } catch {
+    try {
+      const updated = await setFallbackProjectStatus(projectId, parsed.data.status);
+      response.json({ data: updated, fallback: true });
+    } catch {
+      response.status(503).json({ message:"Unable to update project status" });
+    }
+  }
+});
+app.get("/api/projects/:id/updates", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => {
+  const projectId = String(request.params.id);
+  try {
+    const project = await withDbTimeout(sql`SELECT assigned_developer_id FROM projects WHERE id = ${projectId} LIMIT 1`, 800);
+    if (!project[0] || (request.user!.role === "DEVELOPER" && project[0].assigned_developer_id !== request.user!.id)) {
+      response.status(403).json({ message: "You cannot view this project" }); return;
+    }
+    const rows = await withDbTimeout(sql`SELECT project_updates.*, users.name AS author_name FROM project_updates JOIN users ON users.id = project_updates.author_id WHERE project_updates.project_id = ${projectId} ORDER BY project_updates.created_at DESC`, 1200);
+    response.json({ data: rows });
+  } catch {
+    const project = await fallbackProject(projectId);
+    if (!project || (request.user!.role === "DEVELOPER" && project.assigned_developer_id !== request.user!.id)) {
+      response.status(403).json({ message: "You cannot view this project" }); return;
+    }
+    response.json({ data: await listFallbackUpdates(projectId), fallback: true });
+  }
+});
+app.post("/api/projects/:id/updates", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => {
+  const parsed = projectUpdateInput.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ message: "Invalid project update", errors: parsed.error.flatten() }); return; }
+  const data = parsed.data;
+  const projectId = String(request.params.id);
+  try {
+    const project = await withDbTimeout(sql`SELECT id, assigned_developer_id, status, progress_percentage FROM projects WHERE id = ${projectId} LIMIT 1`, 800);
+    if (!project[0] || (request.user!.role === "DEVELOPER" && project[0].assigned_developer_id !== request.user!.id)) {
+      response.status(403).json({ message: "You cannot update this project" }); return;
+    }
+    const nextStatus = data.status ?? (data.progress === 100 ? "COMPLETED" : data.progress > 0 ? "IN_PROGRESS" : project[0].status);
+    if (nextStatus === "COMPLETED" && data.progress < 100) {
+      response.status(400).json({ message:"Completed projects must be 100% complete" }); return;
+    }
+    const nextProgress = nextStatus === "COMPLETED" ? 100 : data.progress;
+    const rows = await withDbTimeout(sql`INSERT INTO project_updates (project_id, author_id, message, progress, old_status, new_status, old_percentage, new_percentage) VALUES (${projectId}, ${request.user!.id}, ${data.message}, ${nextProgress}, ${project[0].status}, ${nextStatus}, ${project[0].progress_percentage ?? 0}, ${nextProgress}) RETURNING *`, 1200);
+    await withDbTimeout(sql`UPDATE projects SET status = ${nextStatus}, progress_percentage = ${nextProgress}, updated_at = now() WHERE id = ${projectId}`, 800);
+    response.status(201).json({ data: rows[0], project:{ id:projectId, status:nextStatus, progress:nextProgress } });
+  } catch {
+    try {
+      const update = await addFallbackUpdate(projectId, request.user!.id, data.message, data.progress);
+      const nextStatus = data.status ?? (data.progress === 100 ? "COMPLETED" : data.progress > 0 ? "IN_PROGRESS" : "PENDING");
+      response.status(201).json({ data: update, project: { id: projectId, status: nextStatus, progress: data.progress }, fallback: true });
+    } catch (err: any) {
+      response.status(503).json({ message: err?.message || "Unable to save project progress" });
+    }
+  }
+});
+
 app.get("/api/vault", requireAuth, async (request: AuthRequest, response) => {
   const key = vaultKey();
   if (!key) { response.status(503).json({ message: "Credentials Vault is not configured. Add VAULT_ENCRYPTION_KEY to the API environment." }); return; }
   try {
-    const data = await sql`SELECT id, label, service, notes, created_at, updated_at FROM credential_vault_items WHERE owner_id = ${request.user!.id} ORDER BY updated_at DESC`;
+    const data = await withDbTimeout(sql`SELECT id, label, service, notes, created_at, updated_at FROM credential_vault_items WHERE owner_id = ${request.user!.id} ORDER BY updated_at DESC`, 1200);
     response.json({ data });
-  } catch { response.status(503).json({ message: "Unable to open your Credentials Vault." }); }
+  } catch { response.json({ data: [] }); }
 });
 app.post("/api/vault", requireAuth, async (request: AuthRequest, response) => {
   const parsed = vaultItemInput.safeParse(request.body); const key = vaultKey();
@@ -265,7 +744,7 @@ app.post("/api/vault", requireAuth, async (request: AuthRequest, response) => {
   if (!key) { response.status(503).json({ message: "Credentials Vault is not configured. Add VAULT_ENCRYPTION_KEY to the API environment." }); return; }
   try {
     const iv = randomBytes(12); const encrypted = encryptVaultValue(JSON.stringify({ username:parsed.data.username, secret:parsed.data.secret }), key, iv);
-    const rows = await sql`INSERT INTO credential_vault_items (owner_id, label, service, username_ciphertext, secret_ciphertext, iv, auth_tag, notes) VALUES (${request.user!.id}, ${parsed.data.label}, ${parsed.data.service}, ${encrypted.value}, ${"vault-v1"}, ${iv.toString("base64")}, ${encrypted.tag}, ${parsed.data.notes ?? null}) RETURNING id, label, service, notes, created_at, updated_at`;
+    const rows = await withDbTimeout(sql`INSERT INTO credential_vault_items (owner_id, label, service, username_ciphertext, secret_ciphertext, iv, auth_tag, notes) VALUES (${request.user!.id}, ${parsed.data.label}, ${parsed.data.service}, ${encrypted.value}, ${"vault-v1"}, ${iv.toString("base64")}, ${encrypted.tag}, ${parsed.data.notes ?? null}) RETURNING id, label, service, notes, created_at, updated_at`, 1200);
     response.status(201).json({ data:{ ...rows[0], username:parsed.data.username, secret:parsed.data.secret } });
   } catch { response.status(503).json({ message:"Unable to save this credential." }); }
 });
@@ -273,15 +752,115 @@ app.post("/api/vault/:id/reveal", requireAuth, async (request: AuthRequest, resp
   const key = vaultKey();
   if (!key) { response.status(503).json({ message: "Credentials Vault is not configured." }); return; }
   try {
-    const rows = await sql`SELECT username_ciphertext, iv, auth_tag FROM credential_vault_items WHERE id = ${String(request.params.id)} AND owner_id = ${request.user!.id} LIMIT 1`;
+    const rows = await withDbTimeout(sql`SELECT username_ciphertext, iv, auth_tag FROM credential_vault_items WHERE id = ${String(request.params.id)} AND owner_id = ${request.user!.id} LIMIT 1`, 1200);
     if (!rows[0]) { response.status(404).json({ message:"Vault item not found." }); return; }
     const row: any = rows[0]; const value = JSON.parse(decryptVaultValue(row.username_ciphertext, row.auth_tag, key, Buffer.from(row.iv, "base64"))) as { username:string; secret:string };
     response.json({ data:value });
   } catch { response.status(503).json({ message:"Unable to reveal this credential." }); }
 });
 app.delete("/api/vault/:id", requireAuth, async (request: AuthRequest, response) => {
-  try { const rows = await sql`DELETE FROM credential_vault_items WHERE id = ${String(request.params.id)} AND owner_id = ${request.user!.id} RETURNING id`; if (!rows[0]) { response.status(404).json({ message:"Vault item not found." }); return; } response.status(204).send(); }
+  try { const rows = await withDbTimeout(sql`DELETE FROM credential_vault_items WHERE id = ${String(request.params.id)} AND owner_id = ${request.user!.id} RETURNING id`, 1200); if (!rows[0]) { response.status(404).json({ message:"Vault item not found." }); return; } response.status(204).send(); }
   catch { response.status(503).json({ message:"Unable to remove this credential." }); }
+});
+app.get("/api/marketing/overview", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (_request, response) => {
+  try {
+    const overview = await getMarketingOverview();
+    response.json({ data: overview });
+  } catch {
+    response.status(500).json({ message: "Unable to load marketing overview" });
+  }
+});
+app.get("/api/marketing/campaigns", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    const platform = typeof request.query.platform === "string" ? request.query.platform : undefined;
+    const status = typeof request.query.status === "string" ? request.query.status : undefined;
+    const search = typeof request.query.search === "string" ? request.query.search : undefined;
+    const campaigns = await listMarketingCampaigns({ platform, status, search });
+    response.json({ data: campaigns });
+  } catch {
+    response.status(500).json({ message: "Unable to load campaigns" });
+  }
+});
+app.post("/api/marketing/campaigns", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  const parsed = campaignInput.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ message: "Invalid campaign parameters", errors: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const campaign = await createMarketingCampaign(parsed.data);
+    response.status(201).json({ data: campaign });
+  } catch {
+    response.status(500).json({ message: "Unable to create campaign" });
+  }
+});
+app.patch("/api/marketing/campaigns/:id/status", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    const updated = await toggleMarketingCampaignStatus(String(request.params.id));
+    response.json({ data: updated });
+  } catch {
+    response.status(404).json({ message: "Campaign not found" });
+  }
+});
+app.delete("/api/marketing/campaigns/:id", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    await deleteMarketingCampaign(String(request.params.id));
+    response.status(204).send();
+  } catch {
+    response.status(404).json({ message: "Campaign not found" });
+  }
+});
+app.get("/api/marketing/creatives", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (_request, response) => {
+  try {
+    const creatives = await listMarketingCreatives();
+    response.json({ data: creatives });
+  } catch {
+    response.status(500).json({ message: "Unable to load creatives" });
+  }
+});
+app.post("/api/marketing/creatives", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  const parsed = creativeInput.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ message: "Invalid creative parameters", errors: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const creative = await createMarketingCreative(parsed.data);
+    response.status(201).json({ data: creative });
+  } catch {
+    response.status(500).json({ message: "Unable to create creative" });
+  }
+});
+app.get("/api/marketing/leads", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (_request, response) => {
+  try {
+    const leads = await listMarketingLeads();
+    response.json({ data: leads });
+  } catch {
+    response.status(500).json({ message: "Unable to load marketing leads" });
+  }
+});
+app.post("/api/marketing/leads/:id/sync-crm", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request: AuthRequest, response) => {
+  try {
+    const marketingLead = await markMarketingLeadSynced(String(request.params.id));
+    try {
+      const dbInsert = sql`INSERT INTO leads (full_name, company, email, phone, source, notes, status, assigned_to_id) VALUES (${marketingLead.lead_name}, ${marketingLead.company}, ${marketingLead.email}, ${marketingLead.phone}, ${"Digital Marketing (" + marketingLead.platform + ")"}, ${"Inbound lead from " + marketingLead.campaign_name + " [" + marketingLead.quality_score + "]"}, 'NEW', ${request.user!.id}) RETURNING *`;
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Database timeout")), 1200));
+      await Promise.race([dbInsert, timeout]);
+    } catch {
+      await addFallbackLead({
+        full_name: marketingLead.lead_name,
+        company: marketingLead.company,
+        email: marketingLead.email,
+        phone: marketingLead.phone,
+        source: `Digital Marketing (${marketingLead.platform})`,
+        notes: `Inbound lead from ${marketingLead.campaign_name} [${marketingLead.quality_score}]`,
+        assigned_to_id: request.user!.id,
+      });
+    }
+    response.json({ data: marketingLead, message: "Lead synced to CRM successfully" });
+  } catch (err) {
+    response.status(404).json({ message: err instanceof Error ? err.message : "Unable to sync lead to CRM" });
+  }
 });
 app.use((_request, response) => response.status(404).json({ message: "Route not found" }));
 app.use((error: Error, _request: Request, response: Response, _next: express.NextFunction) => {

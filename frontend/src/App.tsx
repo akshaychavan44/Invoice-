@@ -4,6 +4,7 @@ import SubAdminDashboard from "./components/SubAdminDashboard";
 import DeveloperWorkspace from "./components/DeveloperWorkspace";
 import PaymentsWorkspace from "./components/PaymentsWorkspace";
 import CredentialsVault from "./components/CredentialsVault";
+import DigitalMarketingWorkspace from "./components/DigitalMarketingWorkspace";
 import { ClientsPage, CreateInvoicePage, DashboardPage, ExpensesPage, FollowUpsPage, InvoicesPage, LeadsPage, PaymentsPage, QuotationsPage } from "./components/pages/CrmPages";
 import "./app.css";
 import { apiFetch, AuthUser } from "./lib/api";
@@ -16,7 +17,7 @@ import {
   Phone, MessageCircle, Mail, Calendar, MapPin, TrendingUp, TrendingDown, Clock,
   Check, AlertCircle, ArrowLeft, Save, Wand2, Sparkles, Bot, Filter, KeyRound,
   Download, Edit3, Trash2, MoreHorizontal, ChevronRight, Briefcase, Home, Store, Factory, LandPlot,
-  LogOut, Crown, CheckCircle2
+  LogOut, Crown, CheckCircle2, Megaphone
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -621,6 +622,15 @@ if (userRole === "SUB_ADMIN") {
     <SubAdminDashboard onLogout={logout} dark={isDark} onToggleTheme={toggleTheme} />
   );
 }
+if (userRole === "DIGITAL_MARKETING") {
+  return (
+    <DigitalMarketingWorkspace
+      onLogout={logout}
+      dark={isDark}
+      onToggleTheme={toggleTheme}
+    />
+  );
+}
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }} className={`luxury-app ${isDark ? "dark-theme" : "light-theme"} premium-dashboard h-screen w-screen overflow-hidden font-sans antialiased flex ${bgMain} ${textMain} transition-colors duration-300`}>
       
@@ -655,6 +665,7 @@ if (userRole === "SUB_ADMIN") {
             { id:"quotations", label:"Quotations", icon:FileQuestion },
             { id:"clients", label:"Clients", icon:Users },
             { id:"developers", label:"Developers & Projects", icon:Briefcase },
+            { id:"marketing", label:"Digital Marketing", icon:Megaphone },
             { id:"payments", label:"Payments", icon:CreditCard },
             { id:"vault", label:"Credentials Vault", icon:KeyRound },
           ].map(item=>{
@@ -1484,6 +1495,17 @@ if (userRole === "SUB_ADMIN") {
           )}
 
           {currentPage==="developers" && <DeveloperWorkspace admin dark={isDark} />}
+
+          {currentPage === "marketing" && (
+            <div className="max-w-[1600px] mx-auto w-full -m-4 lg:-m-6">
+              <DigitalMarketingWorkspace
+                admin
+                dark={isDark}
+                onBack={() => setCurrentPage("dashboard")}
+                onToggleTheme={toggleTheme}
+              />
+            </div>
+          )}
 
           {currentPage === "payments" && <PaymentsPage><PaymentsWorkspace dark={isDark} role={userRole}/></PaymentsPage>}
 

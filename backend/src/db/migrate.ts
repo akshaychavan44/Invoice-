@@ -6,6 +6,7 @@ const sql = neon(url);
 async function migrate(): Promise<void> {
   await sql`DO $$ BEGIN CREATE TYPE role AS ENUM ('SUPER_ADMIN', 'SUB_ADMIN', 'SALES'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`;
   await sql`ALTER TYPE role ADD VALUE IF NOT EXISTS 'DEVELOPER'`;
+  await sql`ALTER TYPE role ADD VALUE IF NOT EXISTS 'DIGITAL_MARKETING'`;
   await sql`DO $$ BEGIN CREATE TYPE lead_status AS ENUM ('NEW', 'CONTACTED', 'FOLLOW_UP', 'INTERESTED', 'QUOTATION_SENT', 'NEGOTIATION', 'CONVERTED', 'LOST'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`;
   await sql`CREATE TABLE IF NOT EXISTS users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(120) NOT NULL, email varchar(255) NOT NULL UNIQUE, password_hash text NOT NULL, role role NOT NULL DEFAULT 'SALES', created_at timestamptz NOT NULL DEFAULT now())`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT false`;
@@ -43,6 +44,9 @@ async function migrate(): Promise<void> {
   await sql`ALTER TABLE project_updates ADD COLUMN IF NOT EXISTS new_percentage integer`;
   await sql`CREATE TABLE IF NOT EXISTS credential_vault_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), owner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, label varchar(120) NOT NULL, service varchar(160) NOT NULL, username_ciphertext text NOT NULL, secret_ciphertext text NOT NULL, iv varchar(64) NOT NULL, auth_tag varchar(64) NOT NULL, notes text, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE INDEX IF NOT EXISTS credential_vault_items_owner_updated_idx ON credential_vault_items(owner_id, updated_at DESC)`;
+  await sql`CREATE TABLE IF NOT EXISTS marketing_campaigns (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(160) NOT NULL, platform varchar(60) NOT NULL, channel varchar(60) NOT NULL, objective varchar(60) NOT NULL, status varchar(40) NOT NULL DEFAULT 'ACTIVE', budget numeric(12,2) NOT NULL DEFAULT 0, spend numeric(12,2) NOT NULL DEFAULT 0, impressions integer NOT NULL DEFAULT 0, clicks integer NOT NULL DEFAULT 0, conversions integer NOT NULL DEFAULT 0, roas numeric(6,2) NOT NULL DEFAULT 0, target_audience text, start_date date, end_date date, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`CREATE TABLE IF NOT EXISTS marketing_creatives (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), campaign_id uuid REFERENCES marketing_campaigns(id) ON DELETE CASCADE, title varchar(160) NOT NULL, format varchar(40) NOT NULL, headline text NOT NULL, primary_text text, cta varchar(60) NOT NULL, ctr numeric(5,2) NOT NULL DEFAULT 0, conversion_rate numeric(5,2) NOT NULL DEFAULT 0, preview_badge varchar(40), status varchar(40) NOT NULL DEFAULT 'ACTIVE', created_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`CREATE TABLE IF NOT EXISTS marketing_leads (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), campaign_name varchar(160) NOT NULL, platform varchar(60) NOT NULL, lead_name varchar(120) NOT NULL, company varchar(160), email varchar(255), phone varchar(30), quality_score varchar(20) DEFAULT 'HOT', status varchar(40) DEFAULT 'NEW', synced_to_crm boolean DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`;
   console.log("Neon schema created.");
 }
 migrate().catch((error: unknown) => { console.error(error); process.exitCode = 1; });

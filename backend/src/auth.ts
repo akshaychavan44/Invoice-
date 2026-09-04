@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
-export type AppRole = "SUPER_ADMIN" | "SUB_ADMIN" | "SALES" | "DEVELOPER";
+export type AppRole = "SUPER_ADMIN" | "SUB_ADMIN" | "SALES" | "DEVELOPER" | "DIGITAL_MARKETING";
 export interface AuthRequest extends Request { user?: { id: string; role: AppRole } }
 const secret = (): string => { const value = process.env.JWT_SECRET; if (!value || value.length < 24) throw new Error("JWT_SECRET must be at least 24 characters"); return value; };
 export const signToken = (id: string, role: AppRole): string => jwt.sign({ sub: id, role }, secret(), { expiresIn: "8h" });

@@ -15,7 +15,7 @@ export type AuthUser = {
   id: string;
   name: string;
   email: string;
-  role: "SUPER_ADMIN" | "SUB_ADMIN" | "SALES" | "DEVELOPER";
+  role: "SUPER_ADMIN" | "SUB_ADMIN" | "SALES" | "DEVELOPER" | "DIGITAL_MARKETING";
 };
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
