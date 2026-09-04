@@ -5,6 +5,11 @@ import DeveloperWorkspace from "./components/DeveloperWorkspace";
 import PaymentsWorkspace from "./components/PaymentsWorkspace";
 import CredentialsVault from "./components/CredentialsVault";
 import DigitalMarketingWorkspace from "./components/DigitalMarketingWorkspace";
+import ScopeOfWorkWorkspace from "./components/ScopeOfWorkWorkspace";
+import AuditLogsViewer from "./components/AuditLogsViewer";
+import UniversalTasksWorkspace from "./components/UniversalTasksWorkspace";
+import PublicSowViewer from "./components/PublicSowViewer";
+import SuperAdminSettings, { SuperAdminSettingsTab } from "./components/SuperAdminSettings";
 import { ClientsPage, CreateInvoicePage, DashboardPage, ExpensesPage, FollowUpsPage, InvoicesPage, LeadsPage, PaymentsPage, QuotationsPage } from "./components/pages/CrmPages";
 import "./app.css";
 import { apiFetch, AuthUser } from "./lib/api";
@@ -17,7 +22,7 @@ import {
   Phone, MessageCircle, Mail, Calendar, MapPin, TrendingUp, TrendingDown, Clock,
   Check, AlertCircle, ArrowLeft, Save, Wand2, Sparkles, Bot, Filter, KeyRound,
   Download, Edit3, Trash2, MoreHorizontal, ChevronRight, Briefcase, Home, Store, Factory, LandPlot,
-  LogOut, Crown, CheckCircle2
+  LogOut, Crown, CheckCircle2, CheckSquare, Shield
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -114,6 +119,14 @@ type FinancePayment = { id: string; invoice_number: string; amount: string | num
 const followUpTimeOptions = Array.from({ length: 24 }, (_, hour) => [0, 30].map(minute => { const suffix = hour < 12 ? "AM" : "PM"; const displayHour = hour % 12 || 12; return `${displayHour}:${String(minute).padStart(2, "0")} ${suffix}`; })).flat();
 
 export default function App() {
+  const [sowToken] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("sowToken");
+    }
+    return null;
+  });
+
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState("");
   const [authChecking, setAuthChecking] = useState(true);
@@ -124,7 +137,18 @@ export default function App() {
     }
     return true;
   });
-  const [currentPage, setCurrentPage] = useState(() => typeof window === "undefined" ? "dashboard" : new URLSearchParams(window.location.search).get("view") || "dashboard");
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (typeof window === "undefined") return "dashboard";
+    const view = new URLSearchParams(window.location.search).get("view");
+    if (view === "users") return "settings";
+    return view || "dashboard";
+  });
+  const [settingsTab, setSettingsTab] = useState<SuperAdminSettingsTab>(() => {
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "users") {
+      return "users";
+    }
+    return "sow-template";
+  });
   const navigationReady = useRef(false); const navigationFromHistory = useRef(false);
   const [leads, setLeads] = useState<Lead[]>([]);
 
@@ -306,7 +330,16 @@ export default function App() {
   // Keep each workspace destination addressable. The selected screen survives refresh,
   // and browser back/forward now follows the app navigation instead of losing context.
   useEffect(() => {
-    const onPopState = () => { navigationFromHistory.current = true; setCurrentPage(new URLSearchParams(window.location.search).get("view") || "dashboard"); };
+    const onPopState = () => {
+      navigationFromHistory.current = true;
+      const view = new URLSearchParams(window.location.search).get("view") || "dashboard";
+      if (view === "users") {
+        setCurrentPage("settings");
+        setSettingsTab("users");
+      } else {
+        setCurrentPage(view);
+      }
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -401,6 +434,15 @@ export default function App() {
     const txt = `${item.title} ${item.message}`.toLowerCase();
     if (txt.includes("invoice") || txt.includes("inv-") || txt.includes("payment")) {
       setCurrentPage("invoices");
+    } else if (txt.includes("sow") || txt.includes("scope")) {
+      setCurrentPage("sows");
+    } else if (txt.includes("employee") || txt.includes("provisioned") || txt.includes("user")) {
+      setSettingsTab("users");
+      setCurrentPage("settings");
+    } else if (txt.includes("task")) {
+      setCurrentPage("tasks");
+    } else if (txt.includes("audit")) {
+      setCurrentPage("audit-logs");
     } else if (txt.includes("follow-up") || txt.includes("followup")) {
       setCurrentPage("followups");
     } else if (txt.includes("lead")) {
@@ -410,7 +452,7 @@ export default function App() {
     } else if (txt.includes("quotation") || txt.includes("quote")) {
       setCurrentPage("quotations");
     } else if (txt.includes("project") || txt.includes("developer")) {
-      setCurrentPage("developer");
+      setCurrentPage("developers");
     }
     setNotifOpen(false);
   };
@@ -714,6 +756,10 @@ export default function App() {
     link.click();
     URL.revokeObjectURL(link.href);
   };
+
+  if (sowToken) {
+    return <PublicSowViewer token={sowToken} onBack={() => { window.location.href = "/"; }} />;
+  }
 if (authChecking) {
   return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Checking your session…</div>;
 }
@@ -774,7 +820,8 @@ if (userRole === "DIGITAL_MARKETING") {
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {[
             { id:"dashboard", label:"Dashboard", icon:LayoutDashboard },
-            { id:"leads", label:"Leads", icon:UserPlus, badge:activeLeads.length },
+            { id:"sows", label:"Scope of Work (SOW)", icon:FileText },
+            { id:"leads", label:"Leads Pipeline", icon:UserPlus, badge:activeLeads.length },
             { id:"followups", label:"Follow-ups", icon:BellRing, badge:overdueFollow, badgeColor:"bg-red-500" },
             { id:"invoices", label:"Invoices", icon:FileText },
             { id:"invoices/new", label:"Create Invoice", icon:Plus, isNew:true },
@@ -782,7 +829,10 @@ if (userRole === "DIGITAL_MARKETING") {
             { id:"clients", label:"Clients", icon:Users },
             { id:"developers", label:"Developers & Projects", icon:Briefcase },
             { id:"payments", label:"Payments", icon:CreditCard },
+            { id:"tasks", label:"Company Tasks", icon:CheckSquare },
+            { id:"audit-logs", label:"Audit Logs", icon:Shield },
             { id:"vault", label:"Credentials Vault", icon:KeyRound },
+            { id:"settings", label:"Admin Settings", icon:Settings },
           ].map(item=>{
             const active = currentPage===item.id;
             return (
@@ -810,7 +860,7 @@ if (userRole === "DIGITAL_MARKETING") {
       {/* MAIN */}
       <div className="flex-1 min-w-0 min-h-0 flex flex-col">
         {/* HEADER */}
-        <header className={`h-[64px] sticky top-0 z-20 flex items-center gap-3 px-4 lg:px-6 border-b backdrop-blur-xl ${isDark?"bg-[#0a0d18]/80 border-white/10":"bg-white/90 border-slate-200"} relative transition-colors duration-200`}>
+        <header className={`w-full h-[64px] sticky top-0 z-20 flex items-center justify-between gap-3 px-4 lg:px-6 border-b backdrop-blur-xl ${isDark?"bg-[#0a0d18]/80 border-white/10":"bg-white/90 border-slate-200"} relative transition-colors duration-200`}>
           {/* animated gradient line */}
           <div className="absolute bottom-0 left-0 right-0 h-[1px] overflow-hidden">
             <div className="h-full w-full" style={{background:'linear-gradient(90deg, #6366f1, #8b5cf6, #06b6d4, #6366f1)', backgroundSize:'200% 100%', animation:'gradient-move 3s linear infinite'}}/>
@@ -839,7 +889,7 @@ if (userRole === "DIGITAL_MARKETING") {
             )}
           </div>
 
-          <div className="flex-1 lg:hidden" />
+          <div className="flex-1" />
 
           <div className="flex items-center gap-3">
             {/* New dropdown */}
@@ -856,6 +906,9 @@ if (userRole === "DIGITAL_MARKETING") {
                   {[
                     { label:"New Invoice", desc:"Create GST invoice", icon:FileText, action:()=> { setCurrentPage("invoices/new"); setNewDropdownOpen(false);} },
                     { label:"New Lead", desc:"Add potential client", icon:UserPlus, action:()=> { setShowAddLead(true); setNewDropdownOpen(false);} },
+                    { label:"Scope of Work", desc:"Draft & send SOW proposal", icon:FileText, action:()=> { setCurrentPage("sows"); setNewDropdownOpen(false);} },
+                    { label:"Company Task", desc:"Assign cross-functional task", icon:CheckSquare, action:()=> { setCurrentPage("tasks"); setNewDropdownOpen(false);} },
+                    { label:"Admin Settings", desc:"SOW template & company setup", icon:Settings, action:()=> { setCurrentPage("settings"); setNewDropdownOpen(false);} },
                     { label:"Follow Up", desc:"Schedule follow-up", icon:BellRing, action:()=> { setShowFollowUpModal(true); setNewDropdownOpen(false);} },
                     { label:"Store Credential", desc:"Save key or password to vault", icon:KeyRound, action:()=> { setCurrentPage("vault"); setNewDropdownOpen(false);} },
                     { label:"AI Generate Invoice", desc:"Auto from conversation", icon:Wand2, action:()=> { setCurrentPage("invoices/new"); setNewDropdownOpen(false);} },
@@ -1684,6 +1737,30 @@ if (userRole === "DIGITAL_MARKETING") {
           {currentPage === "vault" && (
             <div className="max-w-[1600px] mx-auto w-full">
               <CredentialsVault dark={isDark} />
+            </div>
+          )}
+
+          {currentPage === "sows" && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <ScopeOfWorkWorkspace dark={isDark} />
+            </div>
+          )}
+
+          {currentPage === "tasks" && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <UniversalTasksWorkspace dark={isDark} />
+            </div>
+          )}
+
+          {currentPage === "audit-logs" && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <AuditLogsViewer dark={isDark} />
+            </div>
+          )}
+
+          {(currentPage === "settings" || currentPage === "users") && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <SuperAdminSettings dark={isDark} initialTab={currentPage === "users" ? "users" : settingsTab} />
             </div>
           )}
         </main>

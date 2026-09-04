@@ -6,6 +6,8 @@ import {
   ChevronRight, Filter, LogOut, CheckCircle2, AlertCircle, Building, X
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import ScopeOfWorkWorkspace from "./ScopeOfWorkWorkspace";
+import UniversalTasksWorkspace from "./UniversalTasksWorkspace";
 
 interface SalesDashboardProps {
   onLogout: () => void;
@@ -48,7 +50,7 @@ type Client = {
 };
 
 export default function SalesDashboard({ onLogout, dark: propDark = true, onToggleTheme }: SalesDashboardProps) {
-  const [page, setPage] = useState<"leads" | "followups" | "clients">("leads");
+  const [page, setPage] = useState<"leads" | "followups" | "clients" | "sows" | "tasks">("leads");
   const [dark, setDark] = useState<boolean>(() => {
     if (propDark !== undefined) return propDark;
     if (typeof window !== "undefined") {
@@ -118,13 +120,17 @@ export default function SalesDashboard({ onLogout, dark: propDark = true, onTogg
   }, []);
 
   const filteredLeads = useMemo(() => {
-    return leads.filter(
-      (lead) =>
-        (status === "ALL" || lead.status === status) &&
-        `${lead.full_name} ${lead.company ?? ""} ${lead.phone ?? ""} ${lead.email ?? ""}`
-          .toLowerCase()
-          .includes(query.toLowerCase())
-    );
+    return leads.filter((l) => {
+      const q = query.toLowerCase();
+      const matchesQuery =
+        !query ||
+        l.full_name.toLowerCase().includes(q) ||
+        (l.company && l.company.toLowerCase().includes(q)) ||
+        (l.phone && l.phone.toLowerCase().includes(q)) ||
+        (l.email && l.email.toLowerCase().includes(q));
+      const matchesStatus = status === "ALL" || l.status === status;
+      return matchesQuery && matchesStatus;
+    });
   }, [leads, query, status]);
 
   const filteredFollowups = useMemo(() => {
@@ -153,7 +159,7 @@ export default function SalesDashboard({ onLogout, dark: propDark = true, onTogg
   const mutedText = dark ? "text-[#8e9bb0]" : "text-[#78716c]";
 
   type SalesMenuItem = {
-    id: "leads" | "followups" | "clients";
+    id: "leads" | "followups" | "clients" | "sows" | "tasks";
     label: string;
     icon: React.ComponentType<any>;
     badge?: number;
@@ -162,7 +168,9 @@ export default function SalesDashboard({ onLogout, dark: propDark = true, onTogg
   const menu: SalesMenuItem[] = [
     { id: "leads", label: "Lead Intelligence", icon: Users, badge: leads.length },
     { id: "followups", label: "Follow-up Queue", icon: CalendarDays, badge: followups.length },
-    { id: "clients", label: "Client Directory", icon: ClipboardList, badge: clients.length },
+    { id: "sows", label: "Scope of Work (SOW)", icon: ClipboardList },
+    { id: "tasks", label: "Assigned Tasks", icon: ShieldCheck },
+    { id: "clients", label: "Client Directory", icon: Users, badge: clients.length },
   ];
 
   return (
@@ -247,13 +255,17 @@ export default function SalesDashboard({ onLogout, dark: propDark = true, onTogg
       {/* MAIN VIEWPORT */}
       <div className="flex-1 min-w-0 h-screen flex flex-col overflow-hidden">
         {/* HEADER */}
-        <header className={`h-16 shrink-0 border-b flex items-center justify-between px-6 backdrop-blur-xl ${bgSidebar}`}>
+        <header className={`w-full h-16 shrink-0 border-b flex items-center justify-between px-4 sm:px-6 backdrop-blur-xl ${bgSidebar}`}>
           <div className="flex items-center gap-3">
             <h2 className={`text-lg font-bold tracking-tight capitalize ${dark ? "text-white" : "text-slate-900"}`}>
               {page === "leads"
                 ? "Lead Intelligence"
                 : page === "followups"
                 ? "Follow-up Queue"
+                : page === "sows"
+                ? "Scope of Work (SOW)"
+                : page === "tasks"
+                ? "Company Tasks"
                 : "Client Directory"}
             </h2>
             <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-0.5 text-[10px] font-bold text-cyan-400">
@@ -482,6 +494,20 @@ export default function SalesDashboard({ onLogout, dark: propDark = true, onTogg
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* TAB 4: SCOPE OF WORK */}
+          {page === "sows" && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <ScopeOfWorkWorkspace dark={dark} />
+            </div>
+          )}
+
+          {/* TAB 5: ASSIGNED TASKS */}
+          {page === "tasks" && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <UniversalTasksWorkspace dark={dark} />
             </div>
           )}
         </main>

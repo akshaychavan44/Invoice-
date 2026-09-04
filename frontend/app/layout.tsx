@@ -1,5 +1,12 @@
 import "./globals.css";
 import "../src/app.css";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "ZootechX — Offshore Engineering & CRM Platform",
+  description: "Internal CRM & Business Management Platform for ZootechX Technologies Pvt. Ltd.",
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>

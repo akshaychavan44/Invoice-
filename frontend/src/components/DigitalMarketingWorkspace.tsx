@@ -579,7 +579,7 @@ export default function DigitalMarketingWorkspace({
 
       {/* TOP HEADER */}
       <header className={`sticky top-0 z-40 w-full border-b ${dark ? "border-[#21262d] bg-[#0d1117]/85" : "border-[#ede7dc] bg-[#fbf8f3]/85"} backdrop-blur-md px-4 sm:px-8 py-3.5`}>
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+        <div className="w-full flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {admin && onBack && (
               <button

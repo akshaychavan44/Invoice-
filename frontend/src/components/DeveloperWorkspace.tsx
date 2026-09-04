@@ -55,7 +55,7 @@ export default function DeveloperWorkspace({
   dark?: boolean;
   onToggleTheme?: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"projects" | "team" | "assign" | "vault">("projects");
+  const [activeTab, setActiveTab] = useState<"projects" | "daily" | "issues" | "team" | "assign" | "vault">("projects");
   const [developers, setDevelopers] = useState<Developer[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeDeveloperId, setActiveDeveloperId] = useState<string | null>(null);
@@ -65,6 +65,66 @@ export default function DeveloperWorkspace({
   const [message, setMessage] = useState("");
   const [progress, setProgress] = useState(0);
   const [notice, setNotice] = useState("");
+
+  // Daily Updates State
+  const [dailyUpdatesList, setDailyUpdatesList] = useState<Array<{
+    id: string;
+    developer_name: string;
+    completed_today: string;
+    in_progress: string;
+    pending: string;
+    blocked: string;
+    tomorrows_plan: string;
+    hours_worked: number;
+    project_name?: string;
+    created_at: string;
+  }>>([]);
+  const [dailyForm, setDailyForm] = useState({
+    completedToday: "",
+    inProgress: "",
+    pending: "",
+    blocked: "None",
+    tomorrowsPlan: "",
+    hoursWorked: 8,
+    projectName: "",
+  });
+
+  // Developer Issues State
+  const [issuesList, setIssuesList] = useState<Array<{
+    id: string;
+    title: string;
+    description: string;
+    project_name: string;
+    priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+    type: "BUG" | "FEATURE" | "IMPROVEMENT";
+    status: "OPEN" | "IN_PROGRESS" | "RESOLVED";
+    created_at: string;
+  }>>([
+    {
+      id: "iss-01",
+      title: "CORS preflight timeout on heavy invoice queries",
+      description: "Ensure caching header or withDbTimeout prevents request hanging during Neon cold starts.",
+      project_name: "ZootechX CRM Core",
+      priority: "HIGH",
+      type: "BUG",
+      status: "RESOLVED",
+      created_at: new Date(Date.now() - 86400000).toISOString(),
+    },
+  ]);
+  const [issueForm, setIssueForm] = useState<{
+    title: string;
+    description: string;
+    projectName: string;
+    priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+    type: "BUG" | "FEATURE" | "IMPROVEMENT";
+  }>({
+    title: "",
+    description: "",
+    projectName: "",
+    priority: "MEDIUM",
+    type: "BUG",
+  });
+  const [showIssueModal, setShowIssueModal] = useState(false);
 
   useEffect(() => {
     if (!notice) return;
@@ -134,11 +194,71 @@ export default function DeveloperWorkspace({
         if (!developerResponse.ok) throw new Error(developerData.message || "Unable to load developers");
         setDevelopers(developerData.data ?? []);
       }
+
+      try {
+        const duRes = await apiFetch("/api/daily-updates");
+        const duData = await duRes.json();
+        if (duRes.ok && Array.isArray(duData.data)) setDailyUpdatesList(duData.data);
+      } catch {}
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to reach the project service.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const submitDailyUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dailyForm.completedToday.trim() || !dailyForm.tomorrowsPlan.trim()) {
+      setNotice("Please fill in today's completed work and tomorrow's plan.");
+      return;
+    }
+    setSaving("update");
+    try {
+      const res = await apiFetch("/api/daily-updates", {
+        method: "POST",
+        body: JSON.stringify({
+          ...dailyForm,
+          hoursWorked: Number(dailyForm.hoursWorked) || 8,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to submit daily update");
+      setDailyUpdatesList((prev) => [data.data, ...prev]);
+      setNotice("Daily update submitted successfully!");
+      setDailyForm({
+        completedToday: "",
+        inProgress: "",
+        pending: "",
+        blocked: "None",
+        tomorrowsPlan: "",
+        hoursWorked: 8,
+        projectName: "",
+      });
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Submission failed");
+    } finally {
+      setSaving("");
+    }
+  };
+
+  const submitIssue = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!issueForm.title.trim()) return;
+    const newIssue = {
+      id: `iss-${Date.now().toString().slice(-4)}`,
+      title: issueForm.title.trim(),
+      description: issueForm.description.trim(),
+      project_name: issueForm.projectName || "ZootechX CRM",
+      priority: issueForm.priority,
+      type: issueForm.type,
+      status: "OPEN" as const,
+      created_at: new Date().toISOString(),
+    };
+    setIssuesList((prev) => [newIssue, ...prev]);
+    setShowIssueModal(false);
+    setIssueForm({ title: "", description: "", projectName: "", priority: "MEDIUM", type: "BUG" });
+    setNotice("Issue logged to tracker.");
   };
 
   useEffect(() => {
@@ -314,7 +434,7 @@ export default function DeveloperWorkspace({
   const mutedText = dark ? "text-[#8e9bb0]" : "text-[#78716c]";
 
   type NavItem = {
-    id: "projects" | "team" | "assign" | "vault";
+    id: "projects" | "daily" | "issues" | "team" | "assign" | "vault";
     label: string;
     icon: React.ComponentType<any>;
     badge?: number;
@@ -322,6 +442,8 @@ export default function DeveloperWorkspace({
 
   const navigationItems: NavItem[] = [
     { id: "projects", label: admin ? "All Projects" : "My Projects", icon: FolderKanban, badge: projects.length },
+    { id: "daily", label: "Daily Updates", icon: CalendarDays, badge: dailyUpdatesList.length },
+    { id: "issues", label: "Issues & Bugs", icon: AlertCircle, badge: issuesList.filter((i) => i.status !== "RESOLVED").length },
     ...(admin ? [{ id: "team", label: "Team Members", icon: Users, badge: developers.length } as NavItem] : []),
     ...(admin ? [{ id: "assign", label: "Assign Project", icon: Plus } as NavItem] : []),
     { id: "vault", label: "Credentials & API Vault", icon: KeyRound },
@@ -838,6 +960,308 @@ export default function DeveloperWorkspace({
             </div>
           )}
 
+          {/* TAB: DAILY UPDATES */}
+          {activeTab === "daily" && (
+            <div className="space-y-6 max-w-[1600px] mx-auto w-full">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className={`text-xl font-bold ${dark ? "text-white" : "text-slate-900"}`}>Developer Daily Standup & Work Log</h3>
+                  <p className={`text-xs mt-1 ${mutedText}`}>
+                    Log daily progress, completed tasks, blockers, and hours worked
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Submission Form */}
+                <div className={`lg:col-span-1 rounded-3xl border p-5 sm:p-6 ${bgCard} shadow-sm`}>
+                  <h4 className="font-bold text-sm mb-1">Submit Daily Report</h4>
+                  <p className={`text-xs mb-4 ${mutedText}`}>Keep leads and managers in sync</p>
+
+                  <form onSubmit={submitDailyUpdate} className="space-y-3.5 text-xs">
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Project</label>
+                      <input
+                        value={dailyForm.projectName}
+                        onChange={e => setDailyForm({ ...dailyForm, projectName: e.target.value })}
+                        placeholder="e.g. ZootechX CRM Core"
+                        className={`h-9 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Completed Today *</label>
+                      <textarea
+                        required
+                        rows={3}
+                        value={dailyForm.completedToday}
+                        onChange={e => setDailyForm({ ...dailyForm, completedToday: e.target.value })}
+                        placeholder="Merged SOW module, resolved payment CORS issue..."
+                        className={`w-full rounded-xl border p-2.5 text-xs outline-none ${inputBg}`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">In Progress *</label>
+                      <textarea
+                        required
+                        rows={2}
+                        value={dailyForm.inProgress}
+                        onChange={e => setDailyForm({ ...dailyForm, inProgress: e.target.value })}
+                        placeholder="Unit testing and frontend wiring..."
+                        className={`w-full rounded-xl border p-2.5 text-xs outline-none ${inputBg}`}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Blocked</label>
+                        <input
+                          value={dailyForm.blocked}
+                          onChange={e => setDailyForm({ ...dailyForm, blocked: e.target.value })}
+                          placeholder="None"
+                          className={`h-9 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Hours Worked *</label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0.5"
+                          max="24"
+                          required
+                          value={dailyForm.hoursWorked}
+                          onChange={e => setDailyForm({ ...dailyForm, hoursWorked: Number(e.target.value) })}
+                          className={`h-9 w-full rounded-xl border px-3 text-xs mono outline-none ${inputBg}`}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Tomorrow's Plan *</label>
+                      <textarea
+                        required
+                        rows={2}
+                        value={dailyForm.tomorrowsPlan}
+                        onChange={e => setDailyForm({ ...dailyForm, tomorrowsPlan: e.target.value })}
+                        placeholder="End-to-end regression testing..."
+                        className={`w-full rounded-xl border p-2.5 text-xs outline-none ${inputBg}`}
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={saving === "update"}
+                      className="w-full h-10 mt-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-md transition"
+                    >
+                      {saving === "update" ? "Saving..." : "Submit Daily Update"}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Feed of Updates */}
+                <div className="lg:col-span-2 space-y-3">
+                  <h4 className="font-bold text-sm mb-3">Recent Daily Reports ({dailyUpdatesList.length})</h4>
+                  {dailyUpdatesList.length === 0 ? (
+                    <div className={`rounded-3xl border p-12 text-center text-xs ${bgCard} ${mutedText}`}>
+                      No daily updates logged yet. Submit your first update above.
+                    </div>
+                  ) : (
+                    dailyUpdatesList.map((du) => (
+                      <div key={du.id} className={`rounded-2xl border p-4.5 ${bgCard} shadow-sm space-y-3`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm">{du.developer_name}</span>
+                            {du.project_name && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                {du.project_name}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mono">
+                              {du.hours_worked}h logged
+                            </span>
+                            <span className={`text-[11px] mono ${mutedText}`}>
+                              {new Date(du.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid sm:grid-cols-2 gap-2.5 text-xs">
+                          <div className="rounded-xl p-2.5 bg-black/20 border border-inherit">
+                            <div className="text-[10px] font-semibold uppercase text-emerald-400 mb-1">Completed Today</div>
+                            <p className="leading-relaxed">{du.completed_today}</p>
+                          </div>
+                          <div className="rounded-xl p-2.5 bg-black/20 border border-inherit">
+                            <div className="text-[10px] font-semibold uppercase text-blue-400 mb-1">In Progress</div>
+                            <p className="leading-relaxed">{du.in_progress}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between text-[11px] pt-1 border-t border-inherit/40 gap-2">
+                          <div>
+                            <span className="text-slate-400 font-medium">Tomorrow: </span>
+                            <span>{du.tomorrows_plan}</span>
+                          </div>
+                          {du.blocked && du.blocked !== "None" && (
+                            <div className="text-rose-400 font-medium">
+                              Blocked: {du.blocked}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: ISSUES & BUGS */}
+          {activeTab === "issues" && (
+            <div className="space-y-6 max-w-[1600px] mx-auto w-full">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className={`text-xl font-bold ${dark ? "text-white" : "text-slate-900"}`}>Developer Issue & Bug Tracker</h3>
+                  <p className={`text-xs mt-1 ${mutedText}`}>
+                    Log bugs, technical debt, and feature improvements
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowIssueModal(true)}
+                  className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-2 shadow"
+                >
+                  <Plus size={15} />
+                  <span>Report Bug / Issue</span>
+                </button>
+              </div>
+
+              {/* Issues Grid */}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {issuesList.map((issue) => (
+                  <div key={issue.id} className={`rounded-2xl border p-4.5 ${bgCard} shadow-sm flex flex-col justify-between`}>
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          issue.type === "BUG" ? "bg-rose-500/10 text-rose-400 border-rose-500/30" : "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                        }`}>
+                          {issue.type}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          issue.status === "RESOLVED" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+                        }`}>
+                          {issue.status}
+                        </span>
+                      </div>
+                      <h4 className="mt-2.5 font-semibold text-sm leading-snug">{issue.title}</h4>
+                      <p className={`mt-1.5 text-xs line-clamp-2 ${mutedText}`}>{issue.description}</p>
+                    </div>
+
+                    <div className="mt-4 pt-2.5 border-t border-inherit flex items-center justify-between text-xs">
+                      <span className={`text-[11px] mono ${mutedText}`}>{issue.project_name}</span>
+                      {issue.status !== "RESOLVED" && (
+                        <button
+                          onClick={() => {
+                            setIssuesList(prev => prev.map(i => i.id === issue.id ? { ...i, status: "RESOLVED" } : i));
+                            setNotice(`Issue ${issue.id} marked resolved`);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold hover:bg-emerald-500/20"
+                        >
+                          Resolve
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* LOG ISSUE MODAL */}
+              <AnimatePresence>
+                {showIssueModal && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowIssueModal(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      className={`relative w-full max-w-[480px] rounded-3xl border p-6 shadow-2xl ${bgCard} z-10`}
+                    >
+                      <div className="flex items-center justify-between pb-3 border-b border-inherit">
+                        <h4 className="font-bold text-sm">Report Bug / Technical Issue</h4>
+                        <button onClick={() => setShowIssueModal(false)} className={`h-8 w-8 rounded-xl border flex items-center justify-center ${dark ? "border-[#222d42]" : "border-[#eee6da]"}`}>
+                          <X size={15} />
+                        </button>
+                      </div>
+
+                      <form onSubmit={submitIssue} className="space-y-3.5 pt-3 text-xs">
+                        <div>
+                          <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Issue Title *</label>
+                          <input
+                            required
+                            value={issueForm.title}
+                            onChange={e => setIssueForm({ ...issueForm, title: e.target.value })}
+                            placeholder="e.g. Memory leak during large CSV export"
+                            className={`h-9 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Description</label>
+                          <textarea
+                            rows={3}
+                            value={issueForm.description}
+                            onChange={e => setIssueForm({ ...issueForm, description: e.target.value })}
+                            placeholder="Steps to reproduce, stack trace, or proposed resolution..."
+                            className={`w-full rounded-xl border p-2.5 text-xs outline-none ${inputBg}`}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Type</label>
+                            <select
+                              value={issueForm.type}
+                              onChange={e => setIssueForm({ ...issueForm, type: e.target.value as any })}
+                              className={`h-9 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                            >
+                              <option value="BUG">Bug</option>
+                              <option value="FEATURE">Feature Request</option>
+                              <option value="IMPROVEMENT">Improvement</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Priority</label>
+                            <select
+                              value={issueForm.priority}
+                              onChange={e => setIssueForm({ ...issueForm, priority: e.target.value as any })}
+                              className={`h-9 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                            >
+                              <option value="LOW">Low</option>
+                              <option value="MEDIUM">Medium</option>
+                              <option value="HIGH">High</option>
+                              <option value="URGENT">Urgent</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 flex justify-end gap-2">
+                          <button type="button" onClick={() => setShowIssueModal(false)} className={`px-4 py-2 rounded-xl text-xs font-semibold border ${dark ? "border-[#222d42]" : "border-[#eee6da]"}`}>
+                            Cancel
+                          </button>
+                          <button type="submit" className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white">
+                            Log Issue
+                          </button>
+                        </div>
+                      </form>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
           {/* TAB 4: CREDENTIALS VAULT */}
           {activeTab === "vault" && (
             <div className="max-w-[1600px] mx-auto w-full">
@@ -1127,11 +1551,15 @@ export default function DeveloperWorkspace({
           {/* MAIN VIEWPORT */}
           <div className="flex-1 min-w-0 h-screen flex flex-col overflow-hidden">
             {/* TOP BAR */}
-            <header className={`h-16 shrink-0 border-b flex items-center justify-between px-6 backdrop-blur-xl ${bgSidebar}`}>
+            <header className={`w-full h-16 shrink-0 border-b flex items-center justify-between px-4 sm:px-6 backdrop-blur-xl ${bgSidebar}`}>
               <div className="flex items-center gap-3">
                 <h2 className={`text-lg font-bold tracking-tight capitalize ${dark ? "text-white" : "text-slate-900"}`}>
                   {activeTab === "projects"
                     ? "Projects & Tasks"
+                    : activeTab === "daily"
+                    ? "Daily Developer Updates"
+                    : activeTab === "issues"
+                    ? "Issues & Bug Tracker"
                     : activeTab === "team"
                     ? "Team Developers"
                     : activeTab === "assign"

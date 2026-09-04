@@ -203,3 +203,47 @@ export async function deleteFallbackFollowup(id: string) {
   return false;
 }
 
+export async function convertFallbackQuotationToInvoice(id: string, creatorId: string, creatorName: string) {
+  const store = await read();
+  const quote = store.quotations.find((q) => q.id === id || q.quotation_number === id);
+  if (!quote) throw new Error("Quotation not found");
+  quote.status = "CONVERTED";
+
+  let clientId = quote.client_id;
+  if (!clientId) {
+    const existingClient = store.clients.find((c) => c.name.toLowerCase() === quote.client_name.toLowerCase());
+    if (existingClient) {
+      clientId = existingClient.id;
+    } else {
+      const newClient: LocalClient = {
+        id: randomUUID(),
+        name: quote.client_name,
+        company: quote.client_name,
+        email: null,
+        phone: "N/A",
+        gst_number: null,
+        created_at: new Date().toISOString(),
+      };
+      store.clients.unshift(newClient);
+      clientId = newClient.id;
+    }
+  }
+
+  const invoiceNumber = `INV-${new Date().getFullYear()}-${String(store.invoices.length + 1).padStart(3, "0")}`;
+  const invoice: LocalInvoice = {
+    id: randomUUID(),
+    invoice_number: invoiceNumber,
+    client_id: clientId,
+    client_name: quote.client_name,
+    total: quote.amount,
+    paid_amount: 0,
+    due_date: quote.valid_until || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+    created_by_id: creatorId,
+    created_by_name: creatorName,
+    created_at: new Date().toISOString(),
+  };
+  store.invoices.unshift(invoice);
+  await save(store);
+  return { quotation: quote, invoice };
+}
+

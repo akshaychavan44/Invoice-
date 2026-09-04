@@ -8,6 +8,8 @@ import {
 import { apiFetch } from "../lib/api";
 import DeveloperWorkspace from "./DeveloperWorkspace";
 import CredentialsVault from "./CredentialsVault";
+import ScopeOfWorkWorkspace from "./ScopeOfWorkWorkspace";
+import UniversalTasksWorkspace from "./UniversalTasksWorkspace";
 
 interface SubAdminDashboardProps {
   onLogout: () => void;
@@ -23,7 +25,7 @@ type Lead = { id: string; full_name: string; company: string | null; email: stri
 type Followup = { id: string; lead_name: string; type: string; followup_date: string; followup_time: string | null; status: string };
 
 export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTheme }: SubAdminDashboardProps) {
-  const [page, setPage] = useState<"invoices" | "expenses" | "leads" | "clients" | "developers" | "vault">("invoices");
+  const [page, setPage] = useState<"invoices" | "sows" | "tasks" | "expenses" | "leads" | "clients" | "developers" | "vault">("invoices");
   const [dark, setDark] = useState<boolean>(() => {
     if (propDark !== undefined) return propDark;
     if (typeof window !== "undefined") {
@@ -100,7 +102,7 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
   const load = async () => {
     setLoading(true);
     try {
-      const results = await Promise.all([
+      const [cRes, iRes, eRes, pRes, lRes, fRes] = await Promise.all([
         apiFetch("/api/clients"),
         apiFetch("/api/invoices"),
         apiFetch("/api/expenses"),
@@ -108,15 +110,24 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
         apiFetch("/api/leads"),
         apiFetch("/api/followups"),
       ]);
-      const data = await Promise.all(results.map((r) => r.json()));
-      if (results[0].ok) setClients(data[0].data ?? []);
-      if (results[1].ok) setInvoices(data[1].data ?? []);
-      if (results[2].ok) setExpenses(data[2].data ?? []);
-      if (results[3].ok) setPayments(data[3].data ?? []);
-      if (results[4].ok) setLeads(data[4].data ?? []);
-      if (results[5].ok) setFollowups(data[5].data ?? []);
+
+      const [c, i, e, p, l, f] = await Promise.all([
+        cRes.json(),
+        iRes.json(),
+        eRes.json(),
+        pRes.json(),
+        lRes.json(),
+        fRes.json(),
+      ]);
+
+      if (cRes.ok) setClients(c.data || []);
+      if (iRes.ok) setInvoices(i.data || []);
+      if (eRes.ok) setExpenses(e.data || []);
+      if (pRes.ok) setPayments(p.data || []);
+      if (lRes.ok) setLeads(l.data || []);
+      if (fRes.ok) setFollowups(f.data || []);
     } catch {
-      setNotice("Unable to load shared records. Working in offline mode.");
+      setNotice("Failed to load records");
     } finally {
       setLoading(false);
     }
@@ -124,8 +135,6 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
 
   useEffect(() => {
     void load();
-    const interval = window.setInterval(() => void load(), 12000);
-    return () => window.clearInterval(interval);
   }, []);
 
   const saveRecord = async (path: string, body: unknown, onSuccess: () => void) => {
@@ -165,7 +174,7 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
   }
 
   type SubAdminNavLink = {
-    id: "invoices" | "expenses" | "leads" | "clients" | "developers" | "vault";
+    id: "invoices" | "sows" | "tasks" | "expenses" | "leads" | "clients" | "developers" | "vault";
     label: string;
     icon: React.ComponentType<any>;
     badge?: number;
@@ -173,6 +182,8 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
 
   const navLinks: SubAdminNavLink[] = [
     { id: "invoices", label: "Invoices & Billing", icon: FileText, badge: invoices.length },
+    { id: "sows", label: "Scope of Work (SOW)", icon: FileText },
+    { id: "tasks", label: "Company Tasks", icon: ShieldCheck },
     { id: "expenses", label: "Expenses", icon: Calculator, badge: expenses.length },
     { id: "leads", label: "Shared Leads & Follow-ups", icon: Users, badge: leads.length },
     { id: "clients", label: "Client Directory", icon: Briefcase, badge: clients.length },
@@ -259,11 +270,15 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
       {/* MAIN VIEWPORT */}
       <div className="flex-1 min-w-0 h-screen flex flex-col overflow-hidden">
         {/* HEADER */}
-        <header className={`h-16 shrink-0 border-b flex items-center justify-between px-6 backdrop-blur-xl ${bgSidebar}`}>
+        <header className={`w-full h-16 shrink-0 border-b flex items-center justify-between px-4 sm:px-6 backdrop-blur-xl ${bgSidebar}`}>
           <div className="flex items-center gap-3">
             <h2 className={`text-lg font-bold tracking-tight capitalize ${dark ? "text-white" : "text-slate-900"}`}>
               {page === "invoices"
                 ? "Invoices & Revenue"
+                : page === "sows"
+                ? "Scope of Work (SOW)"
+                : page === "tasks"
+                ? "Company Tasks"
                 : page === "expenses"
                 ? "Company Expenses"
                 : page === "leads"
@@ -544,6 +559,20 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
           {page === "vault" && (
             <div className="max-w-[1600px] mx-auto w-full">
               <CredentialsVault dark={dark} />
+            </div>
+          )}
+
+          {/* TAB 7: SCOPE OF WORK */}
+          {page === "sows" && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <ScopeOfWorkWorkspace dark={dark} />
+            </div>
+          )}
+
+          {/* TAB 8: COMPANY TASKS */}
+          {page === "tasks" && (
+            <div className="max-w-[1600px] mx-auto w-full">
+              <UniversalTasksWorkspace dark={dark} />
             </div>
           )}
         </main>

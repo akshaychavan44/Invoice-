@@ -9,3 +9,5 @@ node_modules/
 backend/.runtime/
 .agents/
 *.tsbuildinfo
+scratch/
+verify_backend_features.mjs

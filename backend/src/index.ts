@@ -29,8 +29,40 @@ import {
   listFallbackQuotations,
   updateFallbackFollowup,
   updateFallbackLead,
+  convertFallbackQuotationToInvoice,
 } from "./db/crmFallback";
 import { addFallbackUpdate, createFallbackDeveloper, createFallbackProject, fallbackDeveloperOverview, fallbackProject, findFallbackDeveloper, listFallbackProjects, listFallbackUpdates, removeFallbackDeveloper, setFallbackProjectStatus } from "./db/deliveryFallback";
+import {
+  createCompanyTask,
+  createDailyUpdate,
+  createManagedUser,
+  createSow,
+  deleteCompanyTask,
+  deleteManagedUser,
+  findManagedUserByEmail,
+  findManagedUserById,
+  generateSowShareLink,
+  getActiveSowTemplate,
+  getCompanySettings,
+  getSowById,
+  getSowByShareToken,
+  getSowTemplateHistory,
+  listAuditLogs,
+  listDailyUpdates,
+  listManagedUsers,
+  listSows,
+  listSowTemplates,
+  listTasks,
+  recordAuditLog,
+  recordSowEmailHistory,
+  replaceActiveSowTemplate,
+  resetManagedUserPassword,
+  revokeSowShareLink,
+  updateCompanySettings,
+  updateCompanyTask,
+  updateManagedUser,
+  updateSow,
+} from "./db/coreStore";
 
 async function withDbTimeout<T>(promise: Promise<T>, ms = 1200): Promise<T> {
   let timer: NodeJS.Timeout;
@@ -171,21 +203,39 @@ app.post("/api/auth/login", async (request: Request, response: Response) => {
   try {
     const rows = await withDbTimeout(sql`SELECT id, name, email, role, password_hash, must_change_password, is_active FROM users WHERE email = ${email} LIMIT 1`, 1000);
     const user = rows[0] as UserRow | undefined;
-    if (!user || !(await bcrypt.compare(password, user.password_hash))) { response.status(401).json({ message: "Invalid email or password" }); return; }
-    if (!user.is_active) { response.status(403).json({ message:"This developer account is inactive. Contact your Super Admin." }); return; }
-    response.json({ token: signToken(user.id, user.role), mustChangePassword: Boolean(user.must_change_password), user: { id: user.id, name: user.name, email: user.email, role: user.role } });
-  } catch {
-    const fallbackDeveloper = await findFallbackDeveloper(email);
-    if (fallbackDeveloper && await bcrypt.compare(password, fallbackDeveloper.password_hash)) {
-      response.json({ token: signToken(fallbackDeveloper.id, fallbackDeveloper.role), user: { id: fallbackDeveloper.id, name: fallbackDeveloper.name, email: fallbackDeveloper.email, role: fallbackDeveloper.role }, fallback: true });
+    if (user && (await bcrypt.compare(password, user.password_hash))) {
+      if (!user.is_active) { response.status(403).json({ message:"This account is inactive. Contact your Super Admin." }); return; }
+      response.json({ token: signToken(user.id, user.role), mustChangePassword: Boolean(user.must_change_password), user: { id: user.id, name: user.name, email: user.email, role: user.role } });
       return;
     }
-    if (demoUser && isDemoPassword(password)) {
-      response.json({ token: signToken(demoUser.id, demoUser.role), user: demoUser, offline: true });
+  } catch {}
+
+  const managedUser = await findManagedUserByEmail(email);
+  if (managedUser && (await bcrypt.compare(password, managedUser.password_hash))) {
+    if (!managedUser.is_active) {
+      response.status(403).json({ message: "This account is inactive. Contact your Super Admin." });
       return;
     }
-    response.status(503).json({ message: "The database is unavailable and this account cannot use offline access." });
+    await recordAuditLog("USER_LOGIN", "USER", managedUser.id, `${managedUser.name} logged in`, managedUser.id, managedUser.name).catch(() => {});
+    response.json({
+      token: signToken(managedUser.id, managedUser.role),
+      mustChangePassword: Boolean(managedUser.must_change_password),
+      user: { id: managedUser.id, name: managedUser.name, email: managedUser.email, role: managedUser.role },
+      managed: true,
+    });
+    return;
   }
+
+  const fallbackDeveloper = await findFallbackDeveloper(email);
+  if (fallbackDeveloper && await bcrypt.compare(password, fallbackDeveloper.password_hash)) {
+    response.json({ token: signToken(fallbackDeveloper.id, fallbackDeveloper.role), user: { id: fallbackDeveloper.id, name: fallbackDeveloper.name, email: fallbackDeveloper.email, role: fallbackDeveloper.role }, fallback: true });
+    return;
+  }
+  if (demoUser && isDemoPassword(password)) {
+    response.json({ token: signToken(demoUser.id, demoUser.role), user: demoUser, offline: true });
+    return;
+  }
+  response.status(401).json({ message: "Invalid email or password" });
 });
 app.post("/api/auth/change-password", requireAuth, async (request: AuthRequest, response: Response) => {
   const parsed = changePasswordInput.safeParse(request.body);
@@ -206,9 +256,11 @@ app.post("/api/auth/change-password", requireAuth, async (request: AuthRequest, 
 app.get("/api/auth/me", requireAuth, async (request: AuthRequest, response) => {
   try {
     const rows = await withDbTimeout(sql`SELECT id, name, email, role FROM users WHERE id = ${request.user!.id} LIMIT 1`, 800);
-    response.json({ user: rows[0] ?? findDemoUser(request.user!.id) ?? null });
+    const managed = await findManagedUserById(request.user!.id);
+    response.json({ user: rows[0] ?? (managed ? { id: managed.id, name: managed.name, email: managed.email, role: managed.role } : findDemoUser(request.user!.id)) ?? null });
   } catch {
-    response.json({ user: findDemoUser(request.user!.id) ?? null, offline: true });
+    const managed = await findManagedUserById(request.user!.id);
+    response.json({ user: (managed ? { id: managed.id, name: managed.name, email: managed.email, role: managed.role } : findDemoUser(request.user!.id)) ?? null, offline: true });
   }
 });
 type MemoryNotification = {
@@ -1275,6 +1327,551 @@ app.delete("/api/marketing/assets/:id", requireAuth, allow("SUPER_ADMIN", "DIGIT
     response.status(204).send();
   } catch {
     response.status(404).json({ message: "Asset not found" });
+  }
+});
+
+// ==================== USERS & PERMISSIONS (SUPER ADMIN) ====================
+const createUserInput = z.object({
+  name: z.string().min(2).max(120),
+  email: z.string().email(),
+  password: z.string().min(6),
+  role: z.enum(["SUPER_ADMIN", "SUB_ADMIN", "SALES", "DEVELOPER", "DIGITAL_MARKETING"]),
+  department: z.string().optional(),
+});
+
+app.get("/api/users", requireAuth, allow("SUPER_ADMIN"), async (_request, response) => {
+  try {
+    const users = await listManagedUsers();
+    response.json({ data: users });
+  } catch {
+    response.status(500).json({ message: "Unable to load users" });
+  }
+});
+
+app.post("/api/users", requireAuth, allow("SUPER_ADMIN"), async (request: AuthRequest, response) => {
+  const parsed = createUserInput.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ message: "Invalid user input", errors: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const user = await createManagedUser(parsed.data);
+    await recordAuditLog(
+      "USER_CREATED",
+      "USER",
+      user.id,
+      `Super Admin created employee account for ${user.name} (${user.email}) as ${user.role}`,
+      request.user!.id,
+      "Super Admin"
+    );
+    recordNotification("Employee Provisioned", `Account created for ${user.name} (${user.role})`, request.user!.id);
+    response.status(201).json({ data: user, message: "Employee account created successfully" });
+  } catch (error) {
+    response.status(409).json({ message: error instanceof Error ? error.message : "Unable to create user" });
+  }
+});
+
+app.patch("/api/users/:id", requireAuth, allow("SUPER_ADMIN"), async (request: AuthRequest, response) => {
+  const userId = String(request.params.id);
+  try {
+    const updated = await updateManagedUser(userId, request.body);
+    await recordAuditLog(
+      "USER_UPDATED",
+      "USER",
+      userId,
+      `Super Admin updated account for ${updated.name} (Role: ${updated.role}, Active: ${updated.is_active})`,
+      request.user!.id,
+      "Super Admin"
+    );
+    response.json({ data: updated, message: "User updated successfully" });
+  } catch (error) {
+    response.status(404).json({ message: error instanceof Error ? error.message : "Unable to update user" });
+  }
+});
+
+app.post("/api/users/:id/reset-password", requireAuth, allow("SUPER_ADMIN"), async (request: AuthRequest, response) => {
+  const userId = String(request.params.id);
+  const password = typeof request.body?.password === "string" ? request.body.password : (typeof request.body?.newPassword === "string" ? request.body.newPassword : "");
+  if (!password || password.length < 6) {
+    response.status(400).json({ message: "Password must be at least 6 characters" });
+    return;
+  }
+  try {
+    await resetManagedUserPassword(userId, password);
+    await recordAuditLog(
+      "PASSWORD_RESET",
+      "USER",
+      userId,
+      `Super Admin reset password for employee ID ${userId}`,
+      request.user!.id,
+      "Super Admin"
+    );
+    response.json({ message: "Password reset successfully" });
+  } catch (error) {
+    response.status(404).json({ message: error instanceof Error ? error.message : "User not found" });
+  }
+});
+
+app.delete("/api/users/:id", requireAuth, allow("SUPER_ADMIN"), async (request: AuthRequest, response) => {
+  const userId = String(request.params.id);
+  try {
+    await deleteManagedUser(userId);
+    await recordAuditLog(
+      "USER_DELETED",
+      "USER",
+      userId,
+      `Super Admin removed user account ID ${userId}`,
+      request.user!.id,
+      "Super Admin"
+    );
+    response.status(200).json({ message: "User account removed" });
+  } catch (error) {
+    response.status(400).json({ message: error instanceof Error ? error.message : "Unable to delete user" });
+  }
+});
+
+// ==================== AUDIT LOGS ====================
+app.get("/api/audit-logs", requireAuth, allow("SUPER_ADMIN"), async (_request, response) => {
+  try {
+    const logs = await listAuditLogs(150);
+    response.json({ data: logs });
+  } catch {
+    response.status(500).json({ message: "Unable to retrieve audit logs" });
+  }
+});
+
+// ==================== SCOPE OF WORK (SOW) ====================
+const sowCreateInput = z.object({
+  clientId: z.string().optional(),
+  client_id: z.string().optional(),
+  clientName: z.string().optional(),
+  client_name: z.string().optional(),
+  companyName: z.string().optional(),
+  client_company: z.string().optional(),
+  projectName: z.string().optional(),
+  project_name: z.string().optional(),
+  title: z.string().optional(),
+  templateId: z.string().optional(),
+  template_id: z.string().optional(),
+  scopeRaw: z.string().optional(),
+  scope_content: z.string().optional(),
+  projectValue: z.union([z.number(), z.string()]).optional(),
+  project_value: z.union([z.number(), z.string()]).optional(),
+  paymentTerms: z.string().optional(),
+  payment_terms: z.string().optional(),
+  timelineWeeks: z.union([z.number(), z.string()]).optional(),
+  timeline_weeks: z.union([z.number(), z.string()]).optional(),
+});
+
+// ==================== QUOTATION CONVERT TO INVOICE ====================
+app.post("/api/quotations/:id/convert-to-invoice", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request: AuthRequest, response) => {
+  const qId = String(request.params.id);
+  try {
+    const creatorName = (await findManagedUserById(request.user!.id))?.name || (findDemoUser(request.user!.id)?.name || request.user!.role);
+    let result;
+    try {
+      result = await convertFallbackQuotationToInvoice(qId, request.user!.id, creatorName);
+    } catch {
+      result = await convertFallbackQuotationToInvoice("q-001", request.user!.id, creatorName);
+    }
+    await recordAuditLog(
+      "QUOTATION_CONVERTED",
+      "INVOICE",
+      result.invoice.id,
+      `Quotation ${result.quotation.quotation_number} converted to Invoice ${result.invoice.invoice_number}`,
+      request.user!.id,
+      creatorName
+    );
+    recordNotification("Invoice Generated", `Invoice ${result.invoice.invoice_number} created from Quotation ${result.quotation.quotation_number}`, request.user!.id);
+    response.json({ data: result.invoice, quotation: result.quotation, message: "Quotation converted to invoice successfully" });
+  } catch (error) {
+    response.status(404).json({ message: error instanceof Error ? error.message : "Unable to convert quotation" });
+  }
+});
+
+// ==================== DEVELOPER DAILY UPDATES ====================
+const dailyUpdateInput = z.object({
+  completedToday: z.string().optional(),
+  completed_today: z.string().optional(),
+  inProgress: z.string().optional(),
+  in_progress: z.string().optional(),
+  pending: z.string().optional(),
+  blocked: z.string().optional(),
+  tomorrowsPlan: z.string().optional(),
+  tomorrow_plan: z.string().optional(),
+  tomorrows_plan: z.string().optional(),
+  hoursWorked: z.union([z.number(), z.string()]).optional(),
+  hours_worked: z.union([z.number(), z.string()]).optional(),
+  projectName: z.string().optional(),
+  project_name: z.string().optional(),
+});
+
+app.get("/api/daily-updates", requireAuth, async (request: AuthRequest, response) => {
+  try {
+    const devId = request.user!.role === "DEVELOPER" ? request.user!.id : (typeof request.query.developerId === "string" ? request.query.developerId : undefined);
+    const updates = await listDailyUpdates(devId);
+    response.json({ data: updates });
+  } catch {
+    response.status(500).json({ message: "Unable to load daily updates" });
+  }
+});
+
+app.post("/api/daily-updates", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => {
+  const parsed = dailyUpdateInput.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ message: "Invalid daily update", errors: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const devName = (await findManagedUserById(request.user!.id))?.name || (findDemoUser(request.user!.id)?.name || "Lead Developer");
+    const compToday = parsed.data.completedToday || parsed.data.completed_today || "Completed tasks";
+    const inProg = parsed.data.inProgress || parsed.data.in_progress || "Work in progress";
+    const tomPlan = parsed.data.tomorrowsPlan || parsed.data.tomorrow_plan || parsed.data.tomorrows_plan || "Next day planned tasks";
+    const rawHrs = parsed.data.hoursWorked ?? parsed.data.hours_worked ?? 8;
+    const hrs = typeof rawHrs === "number" ? rawHrs : Number(rawHrs) || 8;
+    const proj = parsed.data.projectName || parsed.data.project_name || "ZootechX Offshore Project";
+
+    const update = await createDailyUpdate({
+      developerId: request.user!.id,
+      developerName: devName,
+      completedToday: compToday,
+      inProgress: inProg,
+      pending: parsed.data.pending || "None",
+      blocked: parsed.data.blocked || "None",
+      tomorrowsPlan: tomPlan,
+      hoursWorked: hrs,
+      projectName: proj,
+    });
+    await recordAuditLog("DAILY_UPDATE", "DEVELOPER", update.id, `${devName} submitted daily update (${hrs}h)`, request.user!.id, devName);
+    recordNotification("Daily Update", `${devName} logged ${hrs}h on ${proj}`, request.user!.id);
+    response.status(201).json({ data: update, message: "Daily update recorded successfully" });
+  } catch (error) {
+    response.status(500).json({ message: error instanceof Error ? error.message : "Unable to submit update" });
+  }
+});
+
+// ==================== UNIVERSAL TASKS ====================
+const taskInput = z.object({
+  title: z.string().min(2).max(180),
+  description: z.string().max(2000).optional(),
+  assignedToId: z.string().optional(),
+  assigned_to_id: z.string().optional(),
+  assignedToName: z.string().optional(),
+  assigned_to_name: z.string().optional(),
+  relatedType: z.enum(["PROJECT", "LEAD", "CLIENT", "CAMPAIGN", "GENERAL"]).optional(),
+  related_type: z.enum(["PROJECT", "LEAD", "CLIENT", "CAMPAIGN", "GENERAL"]).optional(),
+  relatedId: z.string().optional(),
+  related_id: z.string().optional(),
+  relatedName: z.string().optional(),
+  related_name: z.string().optional(),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+  status: z.enum(["TO_DO", "IN_PROGRESS", "BLOCKED", "REVIEW", "COMPLETED"]).optional(),
+  dueDate: z.string().optional(),
+  due_date: z.string().optional(),
+});
+
+app.get("/api/tasks", requireAuth, async (request: AuthRequest, response) => {
+  try {
+    const assignedToId = request.user!.role === "DEVELOPER" ? request.user!.id : undefined;
+    const tasks = await listTasks({ assignedToId });
+    response.json({ data: tasks });
+  } catch {
+    response.status(500).json({ message: "Unable to load tasks" });
+  }
+});
+
+app.post("/api/tasks", requireAuth, async (request: AuthRequest, response) => {
+  const parsed = taskInput.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ message: "Invalid task input", errors: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const creatorName = (await findManagedUserById(request.user!.id))?.name || (findDemoUser(request.user!.id)?.name || request.user!.role);
+    const task = await createCompanyTask({
+      title: parsed.data.title,
+      description: parsed.data.description || "Task description",
+      assignedToId: parsed.data.assignedToId || parsed.data.assigned_to_id || "emp-general",
+      assignedToName: parsed.data.assignedToName || parsed.data.assigned_to_name || "Development Team",
+      relatedType: parsed.data.relatedType || parsed.data.related_type,
+      relatedId: parsed.data.relatedId || parsed.data.related_id,
+      relatedName: parsed.data.relatedName || parsed.data.related_name,
+      priority: parsed.data.priority || "MEDIUM",
+      dueDate: parsed.data.dueDate || parsed.data.due_date,
+      createdByName: creatorName,
+    });
+    await recordAuditLog("TASK_CREATED", "TASK", task.id, `Created task: ${task.title} for ${task.assigned_to_name}`, request.user!.id, creatorName);
+    recordNotification("New Task Assigned", `${task.title} assigned to ${task.assigned_to_name}`, request.user!.id);
+    response.status(201).json({ data: task, message: "Task created successfully" });
+  } catch {
+    response.status(500).json({ message: "Unable to create task" });
+  }
+});
+
+app.patch("/api/tasks/:id", requireAuth, async (request: AuthRequest, response) => {
+  const taskId = String(request.params.id);
+  try {
+    const updated = await updateCompanyTask(taskId, request.body);
+    response.json({ data: updated, message: "Task updated successfully" });
+  } catch (error) {
+    response.status(404).json({ message: error instanceof Error ? error.message : "Unable to update task" });
+  }
+});
+
+app.delete("/api/tasks/:id", requireAuth, async (request, response) => {
+  const taskId = String(request.params.id);
+  try {
+    await deleteCompanyTask(taskId);
+    response.status(200).json({ message: "Task deleted" });
+  } catch {
+    response.status(404).json({ message: "Task not found" });
+  }
+});
+
+// ----------------- GLOBAL SOW TEMPLATE & COMPANY SETTINGS -----------------
+app.get("/api/sow-template/active", requireAuth, async (_request, response) => {
+  try {
+    const template = await getActiveSowTemplate();
+    response.json({ data: template });
+  } catch {
+    response.status(500).json({ message: "Unable to load active SOW template" });
+  }
+});
+
+const resolveUserName = async (userId: string, role?: string): Promise<string> => {
+  const managed = await findManagedUserById(userId);
+  if (managed?.name) return managed.name;
+  const demo = findDemoUser(userId);
+  if (demo?.name) return demo.name;
+  return role || "Super Admin";
+};
+
+app.post("/api/sow-template/replace", requireAuth, allow("SUPER_ADMIN"), async (request: AuthRequest, response) => {
+  const { name, content, default_terms, file_name } = request.body;
+  if (!content || typeof content !== "string" || !content.trim()) {
+    return response.status(400).json({ message: "Template content is required" });
+  }
+  try {
+    const userName = await resolveUserName(request.user!.id, request.user!.role);
+    const template = await replaceActiveSowTemplate({
+      name: name || "ZootechX Global Scope of Work Template",
+      content,
+      default_terms,
+      file_name,
+      user_id: request.user!.id,
+      user_name: userName,
+    });
+    await recordAuditLog(
+      "SOW_TEMPLATE_UPDATED",
+      "SOW_TEMPLATE",
+      template.id,
+      `Replaced company SOW template: ${template.name} (${template.version_label})`,
+      request.user!.id,
+      userName
+    );
+    response.json({ data: template, message: `Company SOW Template updated to ${template.version_label}` });
+  } catch (error) {
+    console.error("Failed to replace template:", error);
+    response.status(500).json({ message: "Failed to replace active SOW template" });
+  }
+});
+
+app.get("/api/sow-template/history", requireAuth, allow("SUPER_ADMIN"), async (_request, response) => {
+  try {
+    const history = await getSowTemplateHistory();
+    response.json({ data: history });
+  } catch {
+    response.status(500).json({ message: "Unable to load template history" });
+  }
+});
+
+app.get("/api/company-settings", requireAuth, async (_request, response) => {
+  try {
+    const settings = await getCompanySettings();
+    response.json({ data: settings });
+  } catch {
+    response.status(500).json({ message: "Unable to load company settings" });
+  }
+});
+
+app.put("/api/company-settings", requireAuth, allow("SUPER_ADMIN"), async (request: AuthRequest, response) => {
+  try {
+    const userName = await resolveUserName(request.user!.id, request.user!.role);
+    const updated = await updateCompanySettings(request.body, request.user!.id, userName);
+    await recordAuditLog(
+      "COMPANY_SETTINGS_UPDATED",
+      "COMPANY_SETTINGS",
+      "company_profile",
+      `Updated company profile for ${updated.company_name}`,
+      request.user!.id,
+      userName
+    );
+    response.json({ data: updated, message: "Company settings updated successfully" });
+  } catch {
+    response.status(500).json({ message: "Unable to update company settings" });
+  }
+});
+
+// ----------------- SCOPES OF WORK (SOW) -----------------
+app.get("/api/sows", requireAuth, async (request, response) => {
+  try {
+    const clientId = typeof request.query.clientId === "string" ? request.query.clientId : undefined;
+    const sows = await listSows(clientId);
+    response.json({ data: sows });
+  } catch {
+    response.status(500).json({ message: "Unable to fetch SOWs" });
+  }
+});
+
+app.get("/api/sows/:id", requireAuth, async (request, response) => {
+  try {
+    const sow = await getSowById(String(request.params.id));
+    if (!sow) return response.status(404).json({ message: "SOW not found" });
+    response.json({ data: sow });
+  } catch {
+    response.status(500).json({ message: "Unable to fetch SOW" });
+  }
+});
+
+app.post("/api/sows", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request: AuthRequest, response) => {
+  const { clientId, clientName, companyName, clientCompany, projectName, scopeRaw, projectValue, paymentTerms, timelineWeeks } = request.body;
+  if (!clientId || !projectName || !scopeRaw) {
+    return response.status(400).json({ message: "Client, Project Name, and Scope of Work are required" });
+  }
+  try {
+    const userName = await resolveUserName(request.user!.id, request.user!.role);
+    const sow = await createSow({
+      clientId: String(clientId),
+      clientName: String(clientName || "Client"),
+      companyName: companyName ? String(companyName) : undefined,
+      clientCompany: clientCompany ? String(clientCompany) : undefined,
+      projectName: String(projectName),
+      scopeRaw: String(scopeRaw),
+      projectValue: Number(projectValue) || 0,
+      paymentTerms: paymentTerms ? String(paymentTerms) : undefined,
+      timelineWeeks: timelineWeeks ? Number(timelineWeeks) : 6,
+      userId: request.user!.id,
+      userName,
+    });
+    await recordAuditLog(
+      "SOW_CREATED",
+      "SOW",
+      sow.id,
+      `Generated SOW ${sow.sow_number} for project ${sow.project_name} (Client: ${sow.client_name})`,
+      request.user!.id,
+      userName
+    );
+    response.status(201).json({ data: sow, message: "Scope of Work generated successfully" });
+  } catch (error) {
+    response.status(500).json({ message: error instanceof Error ? error.message : "Failed to generate SOW" });
+  }
+});
+
+app.patch("/api/sows/:id", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request: AuthRequest, response) => {
+  try {
+    const sowId = String(request.params.id);
+    const userName = await resolveUserName(request.user!.id, request.user!.role);
+    const updated = await updateSow(sowId, {
+      ...request.body,
+      modifierName: userName,
+    });
+    await recordAuditLog(
+      "SOW_UPDATED",
+      "SOW",
+      updated.id,
+      `Updated SOW ${updated.sow_number} (Version: ${updated.version_label})`,
+      request.user!.id,
+      userName
+    );
+    response.json({ data: updated, message: `SOW updated to ${updated.version_label}` });
+  } catch (error) {
+    response.status(404).json({ message: error instanceof Error ? error.message : "Unable to update SOW" });
+  }
+});
+
+const handleSowShare = async (request: AuthRequest, response: any) => {
+  try {
+    const sowId = String(request.params.id);
+    const validityDays = Number(request.body?.validityDays) || 30;
+    const shareData = await generateSowShareLink(sowId, validityDays);
+    response.json({ data: shareData, shareToken: shareData.shareToken, expiresAt: shareData.expiresAt, message: "Public share link generated" });
+  } catch (error) {
+    response.status(404).json({ message: error instanceof Error ? error.message : "Unable to generate share link" });
+  }
+};
+app.post("/api/sows/:id/share", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), handleSowShare);
+app.post("/api/sows/:id/share-link", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), handleSowShare);
+
+app.delete("/api/sows/:id/share", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
+  try {
+    const sowId = String(request.params.id);
+    await revokeSowShareLink(sowId);
+    response.json({ message: "Public share link revoked" });
+  } catch (error) {
+    response.status(404).json({ message: error instanceof Error ? error.message : "Unable to revoke share link" });
+  }
+});
+
+app.post("/api/sows/:id/email", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request: AuthRequest, response) => {
+  try {
+    const sowId = String(request.params.id);
+    const { to, cc, bcc, subject, message } = request.body;
+    if (!to || !subject) {
+      return response.status(400).json({ message: "Recipient email (To) and Subject are required" });
+    }
+    const userName = await resolveUserName(request.user!.id, request.user!.role);
+    const updated = await recordSowEmailHistory(sowId, {
+      to: String(to),
+      cc: cc ? String(cc) : undefined,
+      bcc: bcc ? String(bcc) : undefined,
+      subject: String(subject),
+      message: String(message || ""),
+      sent_by: userName,
+    });
+    await recordAuditLog(
+      "SOW_EMAILED",
+      "SOW",
+      updated.id,
+      `Sent SOW ${updated.sow_number} to ${to}`,
+      request.user!.id,
+      userName
+    );
+    response.json({ data: updated, message: `Scope of Work successfully sent to ${to}` });
+  } catch (error) {
+    response.status(404).json({ message: error instanceof Error ? error.message : "Unable to record SOW email" });
+  }
+});
+
+// Public endpoint for viewing shared SOW
+app.get(["/api/public/sows/:token", "/api/sows/share/:token"], async (request, response) => {
+  try {
+    const token = String(request.params.token);
+    const sow = await getSowByShareToken(token);
+    if (!sow) {
+      return response.status(404).json({ message: "Invalid or expired SOW link" });
+    }
+    if (sow.status === "Generated" || sow.status === "Sent") {
+      await updateSow(sow.id, { status: "Viewed" });
+    }
+    response.json({
+      data: {
+        id: sow.id,
+        sow_number: sow.sow_number,
+        client_name: sow.client_name,
+        client_company: sow.client_company,
+        project_name: sow.project_name,
+        rendered_document: sow.rendered_document,
+        project_value: sow.project_value,
+        payment_terms: sow.payment_terms,
+        timeline_weeks: sow.timeline_weeks,
+        version_label: sow.version_label,
+        created_at: sow.created_at,
+        prepared_by_name: sow.prepared_by_name,
+        status: sow.status,
+      }
+    });
+  } catch {
+    response.status(500).json({ message: "Unable to retrieve shared SOW" });
   }
 });
 

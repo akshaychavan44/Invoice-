@@ -1,0 +1,496 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  CheckSquare, Plus, Search, CheckCircle2, AlertCircle, X,
+  Clock, User, Tag, Calendar, RefreshCw, ChevronRight, AlertTriangle
+} from "lucide-react";
+import { apiFetch } from "../lib/api";
+
+export interface CompanyTask {
+  id: string;
+  title: string;
+  description: string;
+  assigned_to_id: string;
+  assigned_to_name: string;
+  related_type: "PROJECT" | "LEAD" | "CLIENT" | "CAMPAIGN" | "GENERAL";
+  related_id?: string | null;
+  related_name?: string | null;
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  status: "TO_DO" | "IN_PROGRESS" | "BLOCKED" | "REVIEW" | "COMPLETED";
+  due_date?: string | null;
+  created_by_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface UserOption {
+  id: string;
+  name: string;
+  role: string;
+}
+
+const priorityStyles = {
+  LOW: { bg: "bg-slate-500/10", text: "text-slate-400", border: "border-slate-500/20" },
+  MEDIUM: { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/30" },
+  HIGH: { bg: "bg-amber-500/10", text: "text-amber-400", border: "border-amber-500/30" },
+  URGENT: { bg: "bg-rose-500/10", text: "text-rose-400", border: "border-rose-500/30" },
+};
+
+const statusStyles = {
+  TO_DO: { bg: "bg-slate-500/10", text: "text-slate-400", label: "To Do" },
+  IN_PROGRESS: { bg: "bg-blue-500/10", text: "text-blue-400", label: "In Progress" },
+  BLOCKED: { bg: "bg-rose-500/10", text: "text-rose-400", label: "Blocked" },
+  REVIEW: { bg: "bg-purple-500/10", text: "text-purple-400", label: "Review" },
+  COMPLETED: { bg: "bg-emerald-500/10", text: "text-emerald-400", label: "Completed" },
+};
+
+export default function UniversalTasksWorkspace({ dark = true }: { dark?: boolean }) {
+  const [tasks, setTasks] = useState<CompanyTask[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [notice, setNotice] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  // Modals
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Form State
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    assignedToId: "",
+    assignedToName: "",
+    relatedType: "PROJECT" as CompanyTask["related_type"],
+    relatedName: "",
+    priority: "MEDIUM" as CompanyTask["priority"],
+    dueDate: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10),
+  });
+
+  const showNotification = (message: string, type: "success" | "error" = "success") => {
+    setNotice({ message, type });
+    setTimeout(() => setNotice(null), 3500);
+  };
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [taskRes, userRes] = await Promise.all([
+        apiFetch("/api/tasks"),
+        apiFetch("/api/users"),
+      ]);
+      const [taskData, userData] = await Promise.all([
+        taskRes.json(),
+        userRes.json(),
+      ]);
+      if (taskRes.ok) setTasks(taskData.data || []);
+      if (userRes.ok) {
+        setUsers(
+          (userData.data || []).map((u: { id: string; name: string; role: string }) => ({
+            id: u.id,
+            name: u.name,
+            role: u.role,
+          }))
+        );
+        if (userData.data?.[0] && !form.assignedToId) {
+          setForm((f) => ({
+            ...f,
+            assignedToId: userData.data[0].id,
+            assignedToName: userData.data[0].name,
+          }));
+        }
+      }
+    } catch {
+      showNotification("Unable to load tasks", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim() || !form.assignedToId) {
+      showNotification("Please provide a task title and assignee", "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiFetch("/api/tasks", {
+        method: "POST",
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to create task");
+      showNotification(`Task "${data.data.title}" assigned successfully!`);
+      setShowCreateModal(false);
+      setForm({
+        title: "",
+        description: "",
+        assignedToId: users[0]?.id || "",
+        assignedToName: users[0]?.name || "",
+        relatedType: "PROJECT",
+        relatedName: "",
+        priority: "MEDIUM",
+        dueDate: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10),
+      });
+      await loadData();
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Failed to create task", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStatusChange = async (task: CompanyTask, nextStatus: CompanyTask["status"]) => {
+    try {
+      const res = await apiFetch(`/api/tasks/${task.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (!res.ok) throw new Error("Status update failed");
+      showNotification(`Task moved to ${statusStyles[nextStatus].label}`);
+      await loadData();
+    } catch {
+      showNotification("Failed to update task", "error");
+    }
+  };
+
+  const filtered = useMemo(() => {
+    return tasks.filter((t) => {
+      const matchesStatus = statusFilter === "ALL" || t.status === statusFilter;
+      const matchesQuery =
+        t.title.toLowerCase().includes(query.toLowerCase()) ||
+        t.description.toLowerCase().includes(query.toLowerCase()) ||
+        t.assigned_to_name.toLowerCase().includes(query.toLowerCase()) ||
+        (t.related_name || "").toLowerCase().includes(query.toLowerCase());
+      return matchesStatus && matchesQuery;
+    });
+  }, [tasks, statusFilter, query]);
+
+  // Styling Tokens
+  const cardBg = dark ? "bg-[#111622] border-[#222d42]" : "bg-white border-[#eee6da]";
+  const muted = dark ? "text-[#94a3b8]" : "text-[#78716c]";
+  const inputBg = dark
+    ? "bg-[#171f30] border-[#222d42] text-[#f1f5f9] placeholder:text-[#64748b]"
+    : "bg-[#fbf8f3] border-[#e8dfd1] text-[#1c1917] placeholder:text-[#a8a29e]";
+
+  return (
+    <div className="space-y-6">
+      {/* Toast */}
+      <AnimatePresence>
+        {notice && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`fixed top-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl text-white text-xs font-medium shadow-2xl ${
+              notice.type === "success" ? "bg-emerald-600" : "bg-rose-600"
+            }`}
+          >
+            {notice.type === "success" ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+            <span>{notice.message}</span>
+            <button onClick={() => setNotice(null)} className="ml-2 opacity-70 hover:opacity-100">
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className={`text-2xl font-bold tracking-tight ${dark ? "text-white" : "text-[#1c1917]"}`}>
+            Company Task Orchestrator
+          </h1>
+          <p className={`text-xs mt-1 ${muted}`}>
+            Cross-functional tracking across projects, sales leads, campaigns, and delivery
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className={`h-10 w-10 rounded-xl border flex items-center justify-center transition ${
+              dark ? "border-[#222d42] hover:bg-white/5 text-[#cca45f]" : "border-[#eee6da] hover:bg-black/5 text-[#a07432]"
+            }`}
+          >
+            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className={`h-10 px-4 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shadow-md ${
+              dark ? "bg-[#cca45f] text-black hover:bg-[#d8b26e]" : "bg-[#a07432] text-white hover:bg-[#8f6426]"
+            }`}
+          >
+            <Plus size={15} />
+            <span>Create Task</span>
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Total Tasks", value: tasks.length, color: "text-[#cca45f]" },
+          { label: "In Progress", value: tasks.filter((t) => t.status === "IN_PROGRESS").length, color: "text-blue-400" },
+          { label: "Urgent Priority", value: tasks.filter((t) => t.priority === "URGENT").length, color: "text-rose-400" },
+          { label: "Completed", value: tasks.filter((t) => t.status === "COMPLETED").length, color: "text-emerald-400" },
+        ].map((item) => (
+          <div key={item.label} className={`rounded-2xl border p-4 ${cardBg} shadow-sm`}>
+            <div className={`text-[11px] font-semibold uppercase tracking-wider ${muted}`}>{item.label}</div>
+            <div className={`mt-2 text-2xl font-bold mono ${item.color}`}>{item.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter Bar */}
+      <div className={`rounded-2xl border p-3.5 flex flex-col sm:flex-row gap-3 items-center justify-between ${cardBg}`}>
+        <div className="relative w-full sm:w-80">
+          <Search size={15} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${muted}`} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search tasks, assignees, or projects..."
+            className={`h-9 w-full rounded-xl border pl-9 pr-3 text-xs outline-none ${inputBg}`}
+          />
+        </div>
+        <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+          {["ALL", "TO_DO", "IN_PROGRESS", "REVIEW", "COMPLETED"].map((st) => (
+            <button
+              key={st}
+              onClick={() => setStatusFilter(st)}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition ${
+                statusFilter === st
+                  ? dark
+                    ? "bg-[#cca45f] text-black shadow-sm font-bold"
+                    : "bg-[#a07432] text-white shadow-sm font-bold"
+                  : `${muted} hover:bg-white/5`
+              }`}
+            >
+              {st === "ALL" ? "All Tasks" : statusStyles[st as keyof typeof statusStyles]?.label || st}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tasks Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filtered.length === 0 ? (
+          <div className={`col-span-full rounded-2xl border p-12 text-center text-xs ${cardBg} ${muted}`}>
+            No tasks found matching your criteria.
+          </div>
+        ) : (
+          filtered.map((task) => {
+            const pStyle = priorityStyles[task.priority] || priorityStyles.MEDIUM;
+            const sStyle = statusStyles[task.status] || statusStyles.TO_DO;
+            return (
+              <motion.div
+                key={task.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`rounded-2xl border p-4 ${cardBg} shadow-sm flex flex-col justify-between hover:border-[#cca45f]/40 transition`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${pStyle.bg} ${pStyle.text} ${pStyle.border}`}>
+                      {task.priority}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${sStyle.bg} ${sStyle.text}`}>
+                      {sStyle.label}
+                    </span>
+                  </div>
+
+                  <h4 className={`mt-3 font-semibold text-sm leading-snug ${dark ? "text-[#f1f5f9]" : "text-[#1c1917]"}`}>
+                    {task.title}
+                  </h4>
+                  <p className={`mt-1.5 text-xs line-clamp-2 ${muted}`}>
+                    {task.description}
+                  </p>
+
+                  {task.related_name && (
+                    <div className="mt-3 flex items-center gap-1.5 text-[11px] font-medium text-[#cca45f]">
+                      <Tag size={12} />
+                      <span className="truncate">{task.related_name} ({task.related_type})</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-inherit flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-6 w-6 rounded-full bg-indigo-600/20 text-indigo-400 font-bold text-[10px] flex items-center justify-center">
+                      {task.assigned_to_name.slice(0, 1).toUpperCase()}
+                    </div>
+                    <span className={`text-[11px] font-medium truncate max-w-[100px] ${muted}`}>
+                      {task.assigned_to_name}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {task.status !== "COMPLETED" && (
+                      <button
+                        title="Mark Completed"
+                        onClick={() => handleStatusChange(task, "COMPLETED")}
+                        className={`h-7 px-2.5 rounded-lg text-[10px] font-semibold transition border ${
+                          dark ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" : "border-emerald-600 text-emerald-600 hover:bg-emerald-50"
+                        }`}
+                      >
+                        Complete
+                      </button>
+                    )}
+                    {task.status === "TO_DO" && (
+                      <button
+                        title="Start Progress"
+                        onClick={() => handleStatusChange(task, "IN_PROGRESS")}
+                        className={`h-7 px-2.5 rounded-lg text-[10px] font-semibold transition border ${
+                          dark ? "border-blue-500/30 text-blue-400 hover:bg-blue-500/10" : "border-blue-600 text-blue-600 hover:bg-blue-50"
+                        }`}
+                      >
+                        Start
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })
+        )}
+      </div>
+
+      {/* CREATE TASK MODAL */}
+      <AnimatePresence>
+        {showCreateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreateModal(false)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className={`relative w-full max-w-[520px] rounded-3xl border p-6 shadow-2xl ${cardBg} z-10`}
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-inherit">
+                <div>
+                  <h3 className={`font-bold text-base ${dark ? "text-white" : "text-[#1c1917]"}`}>Create & Assign Task</h3>
+                  <p className={`text-xs ${muted}`}>Delegate work across engineering, sales, or marketing</p>
+                </div>
+                <button onClick={() => setShowCreateModal(false)} className={`h-8 w-8 rounded-xl border flex items-center justify-center ${dark ? "border-[#222d42]" : "border-[#eee6da]"}`}>
+                  <X size={15} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateTask} className="space-y-4 pt-4">
+                <div>
+                  <label className={`text-[11px] font-semibold ${muted}`}>Task Title *</label>
+                  <input
+                    required
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    placeholder="e.g. Conduct security penetration review on API"
+                    className={`mt-1.5 w-full h-10 rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                  />
+                </div>
+
+                <div>
+                  <label className={`text-[11px] font-semibold ${muted}`}>Description</label>
+                  <textarea
+                    rows={3}
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    placeholder="Actionable instructions, acceptance criteria, or relevant links..."
+                    className={`mt-1.5 w-full rounded-xl border p-3 text-xs outline-none ${inputBg}`}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={`text-[11px] font-semibold ${muted}`}>Assignee *</label>
+                    <select
+                      required
+                      value={form.assignedToId}
+                      onChange={(e) => {
+                        const sel = users.find((u) => u.id === e.target.value);
+                        setForm({ ...form, assignedToId: e.target.value, assignedToName: sel?.name || "" });
+                      }}
+                      className={`mt-1.5 w-full h-10 rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                    >
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({u.role})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className={`text-[11px] font-semibold ${muted}`}>Priority</label>
+                    <select
+                      value={form.priority}
+                      onChange={(e) => setForm({ ...form, priority: e.target.value as CompanyTask["priority"] })}
+                      className={`mt-1.5 w-full h-10 rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                    >
+                      <option value="LOW">Low</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HIGH">High</option>
+                      <option value="URGENT">Urgent</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={`text-[11px] font-semibold ${muted}`}>Related Area</label>
+                    <select
+                      value={form.relatedType}
+                      onChange={(e) => setForm({ ...form, relatedType: e.target.value as CompanyTask["related_type"] })}
+                      className={`mt-1.5 w-full h-10 rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                    >
+                      <option value="PROJECT">Project</option>
+                      <option value="LEAD">Sales Lead</option>
+                      <option value="CLIENT">Client</option>
+                      <option value="CAMPAIGN">Campaign</option>
+                      <option value="GENERAL">General</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className={`text-[11px] font-semibold ${muted}`}>Related Name</label>
+                    <input
+                      value={form.relatedName}
+                      onChange={(e) => setForm({ ...form, relatedName: e.target.value })}
+                      placeholder="e.g. ZootechX Core"
+                      className={`mt-1.5 w-full h-10 rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-3 flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold border ${dark ? "border-[#222d42]" : "border-[#eee6da]"}`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className={`px-5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                      dark ? "bg-[#cca45f] text-black font-bold" : "bg-[#a07432] text-white font-bold"
+                    }`}
+                  >
+                    {saving ? <RefreshCw size={14} className="animate-spin" /> : <CheckSquare size={14} />}
+                    <span>Assign Task</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
