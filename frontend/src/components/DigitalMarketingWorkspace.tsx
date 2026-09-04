@@ -6,7 +6,8 @@ import {
   Pause, Play, Plus, RefreshCw, Search, Send, Share2, Sparkles, Sun,
   Target, Trash2, TrendingUp, UserCheck, Users, X, DollarSign, PlayCircle,
   Building2, Phone, ShieldCheck, CheckCheck, BarChart3, PieChart as PieIcon,
-  Radio, Zap
+  Radio, Zap, Edit3, Download, Eye, Settings, Sliders, Activity, Filter,
+  FolderPlus, FileText, CheckSquare, Clock, AlertCircle, Briefcase, Link2
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -22,77 +23,68 @@ interface DigitalMarketingWorkspaceProps {
   onToggleTheme?: () => void;
 }
 
-type Campaign = {
+export type MarketingClient = {
   id: string;
   name: string;
-  platform: string;
-  channel: string;
-  objective: string;
-  status: "ACTIVE" | "PAUSED" | "COMPLETED";
+  industry: string;
+  contact_name: string;
+  contact_email: string;
+  monthly_retainer: number;
+  status: "ACTIVE" | "ONBOARDING" | "PAUSED";
+  website?: string;
+  created_at: string;
+};
+
+export type MarketingClientProject = {
+  id: string;
+  client_id: string;
+  client_name: string;
+  title: string;
+  category: "Paid Search" | "Paid Social" | "SEO & Content" | "Brand & Creative" | "Email & CRM";
   budget: number;
   spend: number;
-  impressions: number;
-  clicks: number;
-  conversions: number;
-  roas: number;
-  target_audience?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
+  target_roas: number;
+  current_roas: number;
+  status: "PLANNING" | "IN_PROGRESS" | "IN_REVIEW" | "ACTIVE" | "COMPLETED";
+  deadline: string;
+  deliverables: string;
   created_at: string;
 };
 
-type Creative = {
+export type MarketingClientAsset = {
   id: string;
-  campaign_id?: string | null;
-  title: string;
-  format: "Video" | "Carousel" | "Single Image" | "Story";
-  headline: string;
-  primary_text: string;
-  cta: string;
-  ctr: number;
-  conversion_rate: number;
-  preview_badge: string;
-  status: "ACTIVE" | "PAUSED";
+  client_id: string;
+  client_name: string;
+  project_id?: string | null;
+  project_title?: string | null;
+  name: string;
+  asset_type: "Ad Creative" | "Video Script" | "Copywriting" | "Brand Asset" | "Landing Page" | "Report";
+  file_format: "Figma" | "Video / MP4" | "Graphic / PNG" | "PDF" | "Drive / Doc";
+  asset_url: string;
+  status: "APPROVED" | "IN_REVIEW" | "NEEDS_REVISION" | "DRAFT";
+  version: string;
+  notes?: string;
   created_at: string;
 };
 
-type Lead = {
-  id: string;
-  campaign_name: string;
-  platform: string;
-  lead_name: string;
-  company: string;
-  email: string;
-  phone: string;
-  quality_score: "HOT" | "HIGH_INTENT" | "WARM";
-  status: "NEW" | "QUALIFIED" | "SYNCED";
-  synced_to_crm: boolean;
-  created_at: string;
-};
-
-type OverviewData = {
+type OverviewStats = {
+  totalClients: number;
+  activeClients: number;
+  totalMonthlyRetainer: number;
+  totalProjects: number;
+  activeProjects: number;
+  totalBudgetManaged: number;
   totalSpend: number;
-  totalBudget: number;
-  attributedRevenue: number;
-  blendedRoas: number;
-  totalClicks: number;
-  totalImpressions: number;
-  avgCtr: number;
-  avgCpa: number;
-  totalConversions: number;
-  activeCampaignCount: number;
-  channelDistribution: Array<{ name: string; spend: number; revenue: number; roas: number; conversions: number; color: string }>;
-  monthlyTrends: Array<{ month: string; spend: number; revenue: number; roas: number; leads: number }>;
-  aiInsights: Array<{ id: string; type: string; title: string; description: string; impact: string; priority: string }>;
+  totalAssets: number;
+  assetsInReview: number;
+  assetsApproved: number;
+  clientPortfolio: Array<{
+    name: string;
+    retainer: number;
+    projectCount: number;
+    assetCount: number;
+  }>;
 };
-
-const DEFAULT_SEO_KEYWORDS = [
-  { keyword: "Enterprise ERP Software Suite", rank: 2, volume: 14800, clicks: 3120, change: "+3" },
-  { keyword: "Automated GST Compliant Billing Software", rank: 1, volume: 22400, clicks: 6850, change: "+1" },
-  { keyword: "Multi-channel B2B CRM Pipeline Engine", rank: 4, volume: 8900, clicks: 1420, change: "+5" },
-  { keyword: "Real-time Sales Telemetry & Lead Attribution", rank: 3, volume: 6200, clicks: 980, change: "+2" },
-  { keyword: "ZootechX AI Enterprise Management Suite", rank: 1, volume: 12000, clicks: 4300, change: "0" },
-];
 
 export default function DigitalMarketingWorkspace({
   admin = false,
@@ -101,7 +93,7 @@ export default function DigitalMarketingWorkspace({
   dark: propDark = false,
   onToggleTheme,
 }: DigitalMarketingWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<"overview" | "campaigns" | "creatives" | "leads" | "seo" | "integrations">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "clients" | "projects" | "assets" | "mockups">("overview");
   const [dark, setDark] = useState<boolean>(() => {
     if (propDark !== undefined) return propDark;
     if (typeof window !== "undefined") {
@@ -135,48 +127,64 @@ export default function DigitalMarketingWorkspace({
   };
 
   // State
-  const [overview, setOverview] = useState<OverviewData | null>(null);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [creatives, setCreatives] = useState<Creative[]>([]);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [seoKeywords, setSeoKeywords] = useState(DEFAULT_SEO_KEYWORDS);
-  const [newKeywordInput, setNewKeywordInput] = useState("");
+  const [overview, setOverview] = useState<OverviewStats | null>(null);
+  const [clients, setClients] = useState<MarketingClient[]>([]);
+  const [projects, setProjects] = useState<MarketingClientProject[]>([]);
+  const [assets, setAssets] = useState<MarketingClientAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [showDemoVideoModal, setShowDemoVideoModal] = useState(false);
 
   // Filters & Search
+  const [selectedClientId, setSelectedClientId] = useState<string>("ALL");
+  const [projectCategoryFilter, setProjectCategoryFilter] = useState<string>("ALL");
+  const [projectStatusFilter, setProjectStatusFilter] = useState<string>("ALL");
+  const [assetStatusFilter, setAssetStatusFilter] = useState<string>("ALL");
+  const [assetTypeFilter, setAssetTypeFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
-  const [platformFilter, setPlatformFilter] = useState("ALL");
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [creativeFormatFilter, setCreativeFormatFilter] = useState("ALL");
-  const [leadQualityFilter, setLeadQualityFilter] = useState("ALL");
 
   // Modals
-  const [showNewCampaignModal, setShowNewCampaignModal] = useState(false);
-  const [showNewCreativeModal, setShowNewCreativeModal] = useState(false);
-  const [syncingLeadId, setSyncingLeadId] = useState<string | null>(null);
+  const [showAddClientModal, setShowAddClientModal] = useState(false);
+  const [editingClient, setEditingClient] = useState<MarketingClient | null>(null);
+  const [showAddProjectModal, setShowAddProjectModal] = useState(false);
+  const [editingProject, setEditingProject] = useState<MarketingClientProject | null>(null);
+  const [showAddAssetModal, setShowAddAssetModal] = useState(false);
+  const [previewingAsset, setPreviewingAsset] = useState<MarketingClientAsset | null>(null);
+  const [mockupFormat, setMockupFormat] = useState<"google" | "linkedin" | "meta">("google");
 
-  // Form states
-  const [newCampaignForm, setNewCampaignForm] = useState({
+  // Form states: New Client
+  const [clientForm, setClientForm] = useState({
     name: "",
-    platform: "Google Ads",
-    channel: "Search Intent",
-    objective: "LEAD_GENERATION",
-    budget: 15000,
-    targetAudience: "Founders, CTOs, CFOs in Manufacturing & Retail",
-    startDate: new Date().toISOString().split("T")[0],
-    endDate: "",
+    industry: "B2B SaaS & Cloud",
+    contact_name: "",
+    contact_email: "",
+    monthly_retainer: 12000,
+    website: "",
+    status: "ACTIVE" as const,
   });
 
-  const [newCreativeForm, setNewCreativeForm] = useState({
-    campaignId: "",
+  // Form states: New Project
+  const [projectForm, setProjectForm] = useState({
+    client_id: "",
     title: "",
-    format: "Video" as const,
-    headline: "",
-    primaryText: "",
-    cta: "Book Executive Demo",
+    category: "Paid Search" as const,
+    budget: 15000,
+    target_roas: 5.5,
+    deadline: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+    deliverables: "High-intent search ad groups, weekly ROAS pacing reports",
+  });
+
+  // Form states: New Asset
+  const [assetForm, setAssetForm] = useState({
+    client_id: "",
+    project_id: "",
+    name: "",
+    asset_type: "Ad Creative" as const,
+    file_format: "Figma" as const,
+    asset_url: "https://figma.com/@zootechx/ads-deck",
+    status: "IN_REVIEW" as const,
+    version: "v1.0",
+    notes: "Review copy hooks and design variations for client approval.",
   });
 
   const triggerNotice = (msg: string) => {
@@ -184,29 +192,38 @@ export default function DigitalMarketingWorkspace({
     setTimeout(() => setNotice(null), 3500);
   };
 
+  // Load all client management data
   const loadAllData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const [overviewRes, campaignsRes, creativesRes, leadsRes] = await Promise.all([
-        apiFetch("/api/marketing/overview"),
-        apiFetch("/api/marketing/campaigns"),
-        apiFetch("/api/marketing/creatives"),
-        apiFetch("/api/marketing/leads"),
+      const [overRes, clientsRes, projectsRes, assetsRes] = await Promise.all([
+        apiFetch("/api/marketing/clients/overview"),
+        apiFetch("/api/marketing/clients"),
+        apiFetch("/api/marketing/projects"),
+        apiFetch("/api/marketing/assets"),
       ]);
 
-      const [overviewData, campaignsData, creativesData, leadsData] = await Promise.all([
-        overviewRes.json(),
-        campaignsRes.json(),
-        creativesRes.json(),
-        leadsRes.json(),
+      const [overData, clientsData, projectsData, assetsData] = await Promise.all([
+        overRes.json(),
+        clientsRes.json(),
+        projectsRes.json(),
+        assetsRes.json(),
       ]);
 
-      if (overviewRes.ok && overviewData.data) setOverview(overviewData.data);
-      if (campaignsRes.ok && Array.isArray(campaignsData.data)) setCampaigns(campaignsData.data);
-      if (creativesRes.ok && Array.isArray(creativesData.data)) setCreatives(creativesData.data);
-      if (leadsRes.ok && Array.isArray(leadsData.data)) setLeads(leadsData.data);
+      if (overRes.ok && overData.data) setOverview(overData.data);
+      if (clientsRes.ok && Array.isArray(clientsData.data)) {
+        setClients(clientsData.data);
+        if (!projectForm.client_id && clientsData.data.length > 0) {
+          setProjectForm((prev) => ({ ...prev, client_id: clientsData.data[0].id }));
+        }
+        if (!assetForm.client_id && clientsData.data.length > 0) {
+          setAssetForm((prev) => ({ ...prev, client_id: clientsData.data[0].id }));
+        }
+      }
+      if (projectsRes.ok && Array.isArray(projectsData.data)) setProjects(projectsData.data);
+      if (assetsRes.ok && Array.isArray(assetsData.data)) setAssets(assetsData.data);
     } catch {
-      triggerNotice("Marketing telemetry connected with offline precision mode.");
+      triggerNotice("Client data connected with offline precision mode.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -217,151 +234,321 @@ export default function DigitalMarketingWorkspace({
     loadAllData();
   }, []);
 
-  const handleToggleCampaignStatus = async (id: string) => {
-    try {
-      const res = await apiFetch(`/api/marketing/campaigns/${id}/status`, { method: "PATCH" });
-      const data = await res.json();
-      if (res.ok) {
-        setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, status: data.data.status } : c)));
-        triggerNotice(`Campaign status updated to ${data.data.status}`);
-      }
-    } catch {
-      triggerNotice("Unable to toggle campaign status.");
-    }
+  // CSV Exporter
+  const exportCsv = (filename: string, rows: Record<string, any>[]) => {
+    if (!rows || rows.length === 0) return;
+    const keys = Object.keys(rows[0]);
+    const csvContent = [
+      keys.join(","),
+      ...rows.map((row) =>
+        keys.map((k) => `"${String(row[k] ?? "").replace(/"/g, '""')}"`).join(",")
+      ),
+    ].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
-  const handleDeleteCampaign = async (id: string) => {
-    if (!confirm("Are you sure you want to remove this campaign?")) return;
-    try {
-      const res = await apiFetch(`/api/marketing/campaigns/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setCampaigns((prev) => prev.filter((c) => c.id !== id));
-        triggerNotice("Campaign removed successfully.");
-      }
-    } catch {
-      triggerNotice("Unable to remove campaign.");
+  const exportClientsCsv = () => {
+    if (clients.length === 0) {
+      triggerNotice("No clients available to export.");
+      return;
     }
+    const rows = clients.map((c) => ({
+      "Client Name": c.name,
+      Industry: c.industry,
+      "Monthly Retainer ($)": c.monthly_retainer,
+      "Contact Person": c.contact_name,
+      "Contact Email": c.contact_email,
+      Status: c.status,
+      Website: c.website || "N/A",
+      "Onboarded Date": new Date(c.created_at).toLocaleDateString(),
+    }));
+    exportCsv(`zootechx_clients_${new Date().toISOString().split("T")[0]}.csv`, rows);
+    triggerNotice("Client roster exported as CSV.");
   };
 
-  const handleCreateCampaign = async (e: React.FormEvent) => {
+  const exportProjectsCsv = () => {
+    if (projects.length === 0) {
+      triggerNotice("No projects available to export.");
+      return;
+    }
+    const rows = projects.map((p) => ({
+      "Project Title": p.title,
+      Client: p.client_name,
+      Category: p.category,
+      "Budget ($)": p.budget,
+      "Spend ($)": p.spend,
+      "Target ROAS": `${p.target_roas}x`,
+      "Current ROAS": `${p.current_roas}x`,
+      Status: p.status,
+      Deadline: p.deadline,
+      Deliverables: p.deliverables,
+    }));
+    exportCsv(`zootechx_client_projects_${new Date().toISOString().split("T")[0]}.csv`, rows);
+    triggerNotice("Client projects exported as CSV.");
+  };
+
+  const exportAssetsCsv = () => {
+    if (assets.length === 0) {
+      triggerNotice("No assets available to export.");
+      return;
+    }
+    const rows = assets.map((a) => ({
+      "Asset Name": a.name,
+      Client: a.client_name,
+      "Associated Project": a.project_title || "General Brand Asset",
+      "Asset Type": a.asset_type,
+      "File Format": a.file_format,
+      Status: a.status,
+      Version: a.version,
+      "Link / URL": a.asset_url,
+      Notes: a.notes || "None",
+      "Registered Date": new Date(a.created_at).toLocaleDateString(),
+    }));
+    exportCsv(`zootechx_client_assets_${new Date().toISOString().split("T")[0]}.csv`, rows);
+    triggerNotice("Client asset register exported as CSV.");
+  };
+
+  // Client Handlers
+  const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await apiFetch("/api/marketing/campaigns", {
+      const res = await apiFetch("/api/marketing/clients", {
         method: "POST",
-        body: JSON.stringify(newCampaignForm),
+        body: JSON.stringify(clientForm),
       });
       const data = await res.json();
       if (res.ok && data.data) {
-        setCampaigns((prev) => [data.data, ...prev]);
-        setShowNewCampaignModal(false);
-        setNewCampaignForm({
+        setClients((prev) => [data.data, ...prev]);
+        setShowAddClientModal(false);
+        setClientForm({
           name: "",
-          platform: "Google Ads",
-          channel: "Search Intent",
-          objective: "LEAD_GENERATION",
-          budget: 15000,
-          targetAudience: "Enterprise Decision Makers",
-          startDate: new Date().toISOString().split("T")[0],
-          endDate: "",
+          industry: "B2B SaaS & Cloud",
+          contact_name: "",
+          contact_email: "",
+          monthly_retainer: 12000,
+          website: "",
+          status: "ACTIVE",
         });
-        triggerNotice("Campaign deployed and added to live tracker!");
+        triggerNotice(`Client "${data.data.name}" onboarded successfully!`);
+        loadAllData(false);
+      } else {
+        triggerNotice(data.message || "Failed to add client.");
       }
     } catch {
-      triggerNotice("Error launching new campaign.");
+      triggerNotice("Error adding new client.");
     }
   };
 
-  const handleCreateCreative = async (e: React.FormEvent) => {
+  const handleUpdateClient = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingClient) return;
     try {
-      const res = await apiFetch("/api/marketing/creatives", {
-        method: "POST",
-        body: JSON.stringify(newCreativeForm),
+      const res = await apiFetch(`/api/marketing/clients/${editingClient.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(editingClient),
       });
       const data = await res.json();
       if (res.ok && data.data) {
-        setCreatives((prev) => [data.data, ...prev]);
-        setShowNewCreativeModal(false);
-        setNewCreativeForm({
-          campaignId: "",
-          title: "",
-          format: "Video",
-          headline: "",
-          primaryText: "",
-          cta: "Book Executive Demo",
-        });
-        triggerNotice("Creative registered in asset library!");
+        setClients((prev) => prev.map((c) => (c.id === editingClient.id ? data.data : c)));
+        setEditingClient(null);
+        triggerNotice(`Client "${data.data.name}" updated!`);
+        loadAllData(false);
       }
     } catch {
-      triggerNotice("Error registering creative asset.");
+      triggerNotice("Error updating client.");
     }
   };
 
-  const handleSyncLeadToCrm = async (leadId: string) => {
-    setSyncingLeadId(leadId);
+  const handleDeleteClient = async (id: string) => {
+    const target = clients.find((c) => c.id === id);
+    if (!confirm(`Are you sure you want to delete ${target?.name || "this client"} and all associated projects & assets?`)) return;
     try {
-      const res = await apiFetch(`/api/marketing/leads/${leadId}/sync-crm`, { method: "POST" });
-      const data = await res.json();
+      const res = await apiFetch(`/api/marketing/clients/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setLeads((prev) =>
-          prev.map((l) => (l.id === leadId ? { ...l, synced_to_crm: true, status: "SYNCED" } : l))
-        );
-        triggerNotice("Lead successfully synced into ZootechX CRM Sales pipeline!");
+        setClients((prev) => prev.filter((c) => c.id !== id));
+        setProjects((prev) => prev.filter((p) => p.client_id !== id));
+        setAssets((prev) => prev.filter((a) => a.client_id !== id));
+        triggerNotice("Client and associated data removed.");
+        loadAllData(false);
       }
     } catch {
-      triggerNotice("Unable to sync lead to CRM.");
-    } finally {
-      setSyncingLeadId(null);
+      triggerNotice("Unable to remove client.");
     }
   };
 
-  const handleAddSeoKeyword = (e: React.FormEvent) => {
+  // Project Handlers
+  const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newKeywordInput.trim()) return;
-    const newEntry = {
-      keyword: newKeywordInput.trim(),
-      rank: Math.floor(Math.random() * 5) + 1,
-      volume: Math.floor(Math.random() * 15000) + 4000,
-      clicks: Math.floor(Math.random() * 2500) + 500,
-      change: "+2",
-    };
-    setSeoKeywords((prev) => [newEntry, ...prev]);
-    setNewKeywordInput("");
-    triggerNotice(`Now tracking "${newEntry.keyword}" (Rank #${newEntry.rank})`);
+    try {
+      const res = await apiFetch("/api/marketing/projects", {
+        method: "POST",
+        body: JSON.stringify(projectForm),
+      });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setProjects((prev) => [data.data, ...prev]);
+        setShowAddProjectModal(false);
+        setProjectForm({
+          client_id: clients[0]?.id || "",
+          title: "",
+          category: "Paid Search",
+          budget: 15000,
+          target_roas: 5.5,
+          deadline: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+          deliverables: "High-intent search ad groups, weekly ROAS pacing reports",
+        });
+        triggerNotice(`Project "${data.data.title}" launched for client!`);
+        loadAllData(false);
+      }
+    } catch {
+      triggerNotice("Error creating client project.");
+    }
   };
 
-  const handleApplyAiRecommendation = (title: string) => {
-    triggerNotice(`Applied recommendation: "${title}"`);
+  const handleUpdateProjectStatus = async (id: string, status: MarketingClientProject["status"]) => {
+    try {
+      const res = await apiFetch(`/api/marketing/projects/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setProjects((prev) => prev.map((p) => (p.id === id ? data.data : p)));
+        triggerNotice(`Project status updated to ${status}`);
+        loadAllData(false);
+      }
+    } catch {
+      triggerNotice("Error updating project status.");
+    }
   };
 
-  // Filtered campaigns
-  const filteredCampaigns = useMemo(() => {
-    return campaigns.filter((c) => {
-      const matchPlatform = platformFilter === "ALL" || c.platform.toLowerCase() === platformFilter.toLowerCase();
-      const matchStatus = statusFilter === "ALL" || c.status === statusFilter;
+  const handleDeleteProject = async (id: string) => {
+    if (!confirm("Are you sure you want to remove this client project?")) return;
+    try {
+      const res = await apiFetch(`/api/marketing/projects/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setProjects((prev) => prev.filter((p) => p.id !== id));
+        triggerNotice("Project removed.");
+        loadAllData(false);
+      }
+    } catch {
+      triggerNotice("Unable to delete project.");
+    }
+  };
+
+  // Asset Handlers
+  const handleCreateAsset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await apiFetch("/api/marketing/assets", {
+        method: "POST",
+        body: JSON.stringify(assetForm),
+      });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setAssets((prev) => [data.data, ...prev]);
+        setShowAddAssetModal(false);
+        setAssetForm({
+          client_id: clients[0]?.id || "",
+          project_id: "",
+          name: "",
+          asset_type: "Ad Creative",
+          file_format: "Figma",
+          asset_url: "https://figma.com/@zootechx/ads-deck",
+          status: "IN_REVIEW",
+          version: "v1.0",
+          notes: "",
+        });
+        triggerNotice(`Asset "${data.data.name}" added to client library!`);
+        loadAllData(false);
+      }
+    } catch {
+      triggerNotice("Error registering client asset.");
+    }
+  };
+
+  const handleUpdateAssetStatus = async (id: string, status: MarketingClientAsset["status"]) => {
+    try {
+      const res = await apiFetch(`/api/marketing/assets/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setAssets((prev) => prev.map((a) => (a.id === id ? data.data : a)));
+        if (previewingAsset && previewingAsset.id === id) {
+          setPreviewingAsset(data.data);
+        }
+        triggerNotice(`Asset review status changed to ${status}`);
+        loadAllData(false);
+      }
+    } catch {
+      triggerNotice("Error updating asset status.");
+    }
+  };
+
+  const handleDeleteAsset = async (id: string) => {
+    if (!confirm("Are you sure you want to remove this asset?")) return;
+    try {
+      const res = await apiFetch(`/api/marketing/assets/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setAssets((prev) => prev.filter((a) => a.id !== id));
+        if (previewingAsset && previewingAsset.id === id) setPreviewingAsset(null);
+        triggerNotice("Asset removed from library.");
+        loadAllData(false);
+      }
+    } catch {
+      triggerNotice("Unable to delete asset.");
+    }
+  };
+
+  // Filtered views
+  const filteredClients = useMemo(() => {
+    return clients.filter((c) => {
       const matchSearch =
         !searchQuery ||
         c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.channel.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchPlatform && matchStatus && matchSearch;
+        c.industry.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.contact_name.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchSearch;
     });
-  }, [campaigns, platformFilter, statusFilter, searchQuery]);
+  }, [clients, searchQuery]);
 
-  // Filtered creatives
-  const filteredCreatives = useMemo(() => {
-    return creatives.filter((cr) => {
-      return creativeFormatFilter === "ALL" || cr.format.toLowerCase() === creativeFormatFilter.toLowerCase();
+  const filteredProjects = useMemo(() => {
+    return projects.filter((p) => {
+      const matchClient = selectedClientId === "ALL" || p.client_id === selectedClientId;
+      const matchCategory = projectCategoryFilter === "ALL" || p.category === projectCategoryFilter;
+      const matchStatus = projectStatusFilter === "ALL" || p.status === projectStatusFilter;
+      const matchSearch =
+        !searchQuery ||
+        p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.client_name.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchClient && matchCategory && matchStatus && matchSearch;
     });
-  }, [creatives, creativeFormatFilter]);
+  }, [projects, selectedClientId, projectCategoryFilter, projectStatusFilter, searchQuery]);
 
-  // Filtered leads
-  const filteredLeads = useMemo(() => {
-    return leads.filter((l) => {
-      return leadQualityFilter === "ALL" || l.quality_score === leadQualityFilter;
+  const filteredAssets = useMemo(() => {
+    return assets.filter((a) => {
+      const matchClient = selectedClientId === "ALL" || a.client_id === selectedClientId;
+      const matchStatus = assetStatusFilter === "ALL" || a.status === assetStatusFilter;
+      const matchType = assetTypeFilter === "ALL" || a.asset_type === assetTypeFilter;
+      const matchSearch =
+        !searchQuery ||
+        a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.client_name.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchClient && matchStatus && matchType && matchSearch;
     });
-  }, [leads, leadQualityFilter]);
+  }, [assets, selectedClientId, assetStatusFilter, assetTypeFilter, searchQuery]);
 
-  // Exact styling matching user's screenshot
+  // Exact luxury aesthetic matching user's reference
   const pageBg = dark ? "bg-[#0d1117] text-[#f0f3f6]" : "bg-[#fbf8f3] text-[#141414]";
   const sandCard = dark ? "bg-[#161b22] border-[#30363d]" : "bg-[#f4efe6] border-[#e7e1d5]";
   const whiteCard = dark ? "bg-[#161b22] border-[#30363d]" : "bg-[#ffffff] border-[#ede7dc]";
@@ -409,7 +596,7 @@ export default function DigitalMarketingWorkspace({
                 Z
               </div>
               <span className="font-semibold tracking-tight text-sm">ZootechX ERP</span>
-              <span className={`text-[11px] font-mono ${textMuted}`}>/ digital marketing</span>
+              <span className={`text-[11px] font-mono ${textMuted}`}>/ client marketing management</span>
             </div>
           </div>
 
@@ -417,11 +604,10 @@ export default function DigitalMarketingWorkspace({
           <div className={`hidden md:flex items-center gap-1 rounded-full p-1 border ${dark ? "bg-[#161b22] border-[#30363d]" : "bg-[#ede7dc]/60 border-[#ded8ce]"}`}>
             {[
               { id: "overview", label: "Overview" },
-              { id: "campaigns", label: `Campaigns (${campaigns.length})` },
-              { id: "creatives", label: "Creative Lab" },
-              { id: "leads", label: `Inbound Leads (${leads.filter((l) => !l.synced_to_crm).length})` },
-              { id: "seo", label: "SEO Health" },
-              { id: "integrations", label: "Ad Channels" },
+              { id: "clients", label: `Clients (${clients.length})` },
+              { id: "projects", label: `Client Projects (${projects.length})` },
+              { id: "assets", label: `Client Assets (${assets.length})` },
+              { id: "mockups", label: "Live Ad Mockups" },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -437,15 +623,31 @@ export default function DigitalMarketingWorkspace({
             ))}
           </div>
 
-          {/* Actions & Theme */}
+          {/* Top Actions */}
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setShowNewCampaignModal(true)}
-              className={`hidden sm:flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition shadow-sm ${pillBlack}`}
+              onClick={() => setShowAddClientModal(true)}
+              className={`hidden sm:flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition shadow-sm ${pillBlack}`}
             >
-              <span>+ campaign</span>
+              <span>+ Client</span>
               <ArrowUpRight size={13} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowAddProjectModal(true)}
+              className={`hidden lg:flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition border ${pillOutline}`}
+            >
+              <span>+ Project</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowAddAssetModal(true)}
+              className={`hidden lg:flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition border ${pillOutline}`}
+            >
+              <span>+ Asset</span>
             </button>
 
             <button
@@ -462,7 +664,7 @@ export default function DigitalMarketingWorkspace({
               onClick={() => loadAllData(true)}
               disabled={refreshing}
               className={`flex h-8 w-8 items-center justify-center rounded-full border ${pillOutline} transition`}
-              title="Refresh"
+              title="Refresh Telemetry"
             >
               <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
             </button>
@@ -479,9 +681,9 @@ export default function DigitalMarketingWorkspace({
           </div>
         </div>
 
-        {/* Mobile Sub-Nav */}
+        {/* Mobile Navigation */}
         <div className="mt-2.5 flex md:hidden items-center gap-1 overflow-x-auto pb-1 text-xs">
-          {["overview", "campaigns", "creatives", "leads", "seo", "integrations"].map((tab) => (
+          {["overview", "clients", "projects", "assets", "mockups"].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
@@ -498,65 +700,76 @@ export default function DigitalMarketingWorkspace({
       {/* MAIN CONTAINER */}
       <main className="mx-auto w-full max-w-7xl px-4 sm:px-8 py-8 sm:py-12 space-y-12">
         {/* ========================================================================= */}
-        {/* HERO SECTION (PRESERVING EXACT REFERENCE UI/UX, 100% DIGITAL MARKETING) */}
+        {/* EDITORIAL HERO SECTION (100% PRESERVING AESTHETICS & LAYOUT) */}
         {/* ========================================================================= */}
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
-          {/* Left Column: Editorial Headline & Quiet Copy */}
+          {/* Left Column: Quiet Luxury Headline & Actions */}
           <div className="lg:col-span-6 space-y-6 pt-2">
             <div className="space-y-1">
               <h1 className="text-4xl sm:text-6xl lg:text-[68px] font-editorial leading-[1.04] tracking-tight">
-                <span className="block font-bold">Marketing,</span>
+                <span className="block font-bold">Client Marketing,</span>
                 <span className="block font-normal italic">engineered for</span>
                 <span className="block font-normal italic">revenue scale.</span>
               </h1>
             </div>
 
             <p className={`text-sm sm:text-base ${textSub} max-w-md leading-relaxed`}>
-              Unify multi-channel ad spend, live ROAS attribution, creative iteration and inbound sales pipelines in one quiet dashboard. Built for high-growth enterprise teams that value precision over noise.
+              Complete client management suite. Track client retainers, active growth projects, multi-channel ad deliverables, and creative assets in one unified workspace.
             </p>
 
-            {/* Dual Pill Action Buttons */}
+            {/* Action Pills */}
             <div className="flex flex-wrap items-center gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setShowNewCampaignModal(true)}
+                onClick={() => setShowAddClientModal(true)}
                 className={`flex items-center gap-2 rounded-full px-6 py-3 text-xs sm:text-sm font-medium transition shadow-sm ${pillBlack}`}
               >
-                <span>+ launch campaign</span>
+                <span>+ Onboard Client</span>
                 <ArrowUpRight size={15} />
               </button>
 
               <button
                 type="button"
-                onClick={() => setShowDemoVideoModal(true)}
-                className={`flex items-center gap-2 rounded-full px-6 py-3 text-xs sm:text-sm font-medium transition ${pillOutline}`}
+                onClick={() => setShowAddProjectModal(true)}
+                className={`flex items-center gap-2 rounded-full px-5 py-3 text-xs sm:text-sm font-medium transition ${pillOutline}`}
               >
-                <PlayCircle size={15} />
-                <span>watch growth demo</span>
+                <FolderPlus size={15} />
+                <span>+ Client Project</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAddAssetModal(true)}
+                className={`flex items-center gap-2 rounded-full px-5 py-3 text-xs sm:text-sm font-medium transition ${pillOutline}`}
+              >
+                <FileText size={15} />
+                <span>+ Client Asset</span>
               </button>
             </div>
 
-            {/* Floating Live Capsule Badge */}
+            {/* Floating Capsule Badge */}
             <div className="pt-4">
               <div className={`inline-flex items-center gap-2 rounded-full px-4 py-2 border shadow-sm ${whiteCard}`}>
                 <div className="flex h-4 w-4 items-center justify-center rounded-full bg-black text-white dark:bg-white dark:text-black">
                   <Check size={10} />
                 </div>
                 <span className="font-mono text-xs text-stone-500 dark:text-stone-400">
-                  google search • ROAS: 5.42x • 1,122 MQLs verified
+                  {clients.length} Clients Managed • ${overview?.totalMonthlyRetainer.toLocaleString() || "55,300"}/mo Retainer • 100% On-Track
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Right Column: Quiet Dashboard Interactive Mockup */}
+          {/* Right Column: Quiet Luxury Interactive Agency Mockup */}
           <div className="lg:col-span-6">
             <div className={`rounded-[32px] border ${sandCard} p-4 sm:p-6 space-y-4 shadow-sm relative`}>
-              {/* Floating Pill Notification capsule */}
+              {/* Notification capsule */}
               <div className="flex items-center justify-end">
                 <div className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 border text-[11px] font-mono shadow-sm ${whiteCard}`}>
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-stone-600 dark:text-stone-300">inbound lead: Elena Rostova (Apex Global) captured</span>
+                  <span className="text-stone-600 dark:text-stone-300">
+                    Latest Asset: "{assets[0]?.name || "Apex Copy Matrix"}" in review
+                  </span>
                 </div>
               </div>
 
@@ -566,10 +779,10 @@ export default function DigitalMarketingWorkspace({
                 <div className={`col-span-2 sm:col-span-1 rounded-full border py-3 px-1 flex flex-col items-center gap-2.5 ${whiteCard}`}>
                   {[
                     { id: "overview", char: "o" },
-                    { id: "campaigns", char: "c" },
-                    { id: "creatives", char: "r" },
-                    { id: "leads", char: "l" },
-                    { id: "seo", char: "s" },
+                    { id: "clients", char: "c" },
+                    { id: "projects", char: "p" },
+                    { id: "assets", char: "a" },
+                    { id: "mockups", char: "m" },
                   ].map((item) => (
                     <button
                       key={item.id}
@@ -590,91 +803,71 @@ export default function DigitalMarketingWorkspace({
                   {/* Top 3 Metric Blocks */}
                   <div className="grid grid-cols-3 gap-2">
                     <div className={`rounded-2xl border p-3 text-center ${whiteCard}`}>
-                      <div className={`text-[10px] font-mono ${textMuted}`}>ad spend</div>
-                      <div className="text-base sm:text-lg font-bold font-mono mt-0.5">$42.2k</div>
+                      <div className={`text-[10px] font-mono ${textMuted}`}>Retainers</div>
+                      <div className="text-base sm:text-lg font-bold font-mono mt-0.5">
+                        ${overview?.totalMonthlyRetainer.toLocaleString() || "55.3k"}
+                      </div>
                       <div className="text-[10px] text-emerald-600 font-mono font-semibold">+18% MoM</div>
                     </div>
 
                     <div className={`rounded-2xl border p-3 text-center ${whiteCard}`}>
-                      <div className={`text-[10px] font-mono ${textMuted}`}>pipeline rev</div>
-                      <div className="text-base sm:text-lg font-bold font-mono mt-0.5">$206.5k</div>
-                      <div className="text-[10px] text-emerald-600 font-mono font-semibold">5.06x roas</div>
+                      <div className={`text-[10px] font-mono ${textMuted}`}>Active Proj</div>
+                      <div className="text-base sm:text-lg font-bold font-mono mt-0.5">
+                        {overview?.activeProjects || projects.length}
+                      </div>
+                      <div className="text-[10px] text-emerald-600 font-mono font-semibold">5.4x avg roas</div>
                     </div>
 
                     <div className={`rounded-2xl border p-3 text-center ${whiteCard}`}>
-                      <div className={`text-[10px] font-mono ${textMuted}`}>high-intent mqls</div>
-                      <div className="text-base sm:text-lg font-bold font-mono mt-0.5">1,122</div>
-                      <div className="text-[10px] text-stone-500 font-mono">98% qualified</div>
+                      <div className={`text-[10px] font-mono ${textMuted}`}>Assets</div>
+                      <div className="text-base sm:text-lg font-bold font-mono mt-0.5">
+                        {overview?.totalAssets || assets.length}
+                      </div>
+                      <div className="text-[10px] text-stone-500 font-mono">
+                        {overview?.assetsApproved || 3} approved
+                      </div>
                     </div>
                   </div>
 
-                  {/* Actions Row */}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`rounded-full px-3 py-1 text-[11px] font-mono border ${pillSand}`}>google ads</span>
-                      <span className={`rounded-full px-3 py-1 text-[11px] font-mono border ${pillSand}`}>meta retargeting</span>
-                      <span className={`rounded-full px-3 py-1 text-[11px] font-mono border ${pillSand}`}>linkedin inmail</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowNewCampaignModal(true)}
-                      className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-medium ${pillBlack}`}
-                    >
-                      <span>new campaign</span>
-                      <ArrowUpRight size={11} />
-                    </button>
-                  </div>
-
-                  {/* Attribution Health Bar */}
-                  <div className="space-y-1 pt-1">
-                    <div className="flex items-center justify-between text-[10px] font-mono text-stone-500 dark:text-stone-400">
-                      <span>attribution tracking</span>
-                      <span>99.2% multi-touch synced • 0 drops</span>
-                    </div>
-                    <div className="w-full h-1 bg-stone-300 dark:bg-stone-700 rounded-full overflow-hidden">
-                      <div className="w-[99%] h-full bg-black dark:bg-white rounded-full" />
-                    </div>
-                  </div>
-
-                  {/* Campaign Stream Table Card */}
+                  {/* Client Snapshot Quick Bar */}
                   <div className={`rounded-2xl border p-3.5 space-y-2.5 ${whiteCard}`}>
                     <div className="grid grid-cols-12 text-[10px] font-mono uppercase text-stone-400 pb-1 border-b border-inherit">
-                      <span className="col-span-5">campaign</span>
-                      <span className="col-span-4">roas / cpa</span>
-                      <span className="col-span-3 text-right">status</span>
+                      <span className="col-span-6">Client & Industry</span>
+                      <span className="col-span-3">Retainer</span>
+                      <span className="col-span-3 text-right">Status</span>
                     </div>
 
-                    {[
-                      { name: "Enterprise Search", metric: "5.42x • $30.4", status: "active", isDark: true },
-                      { name: "C-Suite InMail", metric: "6.18x • $44.4", status: "active", isDark: true },
-                      { name: "Meta Retargeting", metric: "4.25x • $31.8", status: "active", isDark: false },
-                    ].map((row, idx) => (
-                      <div key={idx} className="grid grid-cols-12 items-center text-xs font-mono">
-                        <span className="col-span-5 font-semibold text-stone-800 dark:text-stone-200 truncate">{row.name}</span>
-                        <span className="col-span-4 text-emerald-600 font-semibold">{row.metric}</span>
+                    {clients.slice(0, 3).map((cl) => (
+                      <div key={cl.id} className="grid grid-cols-12 items-center text-xs font-mono">
+                        <div className="col-span-6 truncate">
+                          <span className="font-semibold text-stone-800 dark:text-stone-200">{cl.name}</span>
+                          <span className="block text-[10px] text-stone-400">{cl.industry}</span>
+                        </div>
+                        <span className="col-span-3 text-stone-700 dark:text-stone-300 font-semibold">
+                          ${cl.monthly_retainer.toLocaleString()}
+                        </span>
                         <span className="col-span-3 text-right">
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-medium ${
-                            row.isDark ? pillBlack : pillSand
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                            cl.status === "ACTIVE" ? pillBlack : pillSand
                           }`}>
-                            {row.status}
+                            {cl.status.toLowerCase()}
                           </span>
                         </span>
                       </div>
                     ))}
                   </div>
 
-                  {/* AI Growth Attribution Card */}
+                  {/* Active Projects Tracker Capsule */}
                   <div className={`rounded-2xl border p-3.5 flex items-start gap-3 ${whiteCard}`}>
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-black text-white dark:bg-white dark:text-black font-mono font-bold text-[10px]">
-                      ai
+                      PM
                     </div>
                     <div className="text-[11px] leading-snug">
                       <div className="font-semibold text-stone-800 dark:text-stone-200">
-                        ai attributed 48 new enterprise mqls from google & linkedin
+                        {projects.length} Active Growth Projects across {clients.length} Enterprise Clients
                       </div>
                       <div className="text-[10px] text-stone-500 font-mono mt-0.5">
-                        firmographics enriched • quality scored HOT • synced to sales pipeline
+                        Deliverables synced • Weekly ROAS target tracking active
                       </div>
                     </div>
                   </div>
@@ -685,201 +878,279 @@ export default function DigitalMarketingWorkspace({
         </section>
 
         {/* ========================================================================= */}
-        {/* FUNCTIONAL VIEWS (OVERVIEW, CAMPAIGNS, CREATIVES, LEADS, SEO, INTEGRATIONS) */}
+        {/* VIEW 1: AGENCY OVERVIEW */}
         {/* ========================================================================= */}
-
-        {/* VIEW: OVERVIEW DEEP DIVE */}
         {activeTab === "overview" && overview && (
           <section className="space-y-8 pt-4 border-t border-inherit">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold font-editorial">Attributed Media Performance</h2>
-                <p className={`text-xs ${textMuted}`}>Continuous multi-touch telemetry across Google, Meta, LinkedIn and YouTube.</p>
+                <h2 className="text-2xl font-bold font-editorial">Agency Portfolio Overview</h2>
+                <p className={`text-xs ${textMuted}`}>Retainers, active growth deliverables, and creative assets under management.</p>
               </div>
               <div className="flex items-center gap-3 font-mono text-xs text-stone-500">
-                <span>Blended ROAS: <strong className="text-black dark:text-white font-bold">{overview.blendedRoas}x</strong></span>
+                <span>Monthly Retainers: <strong className="text-black dark:text-white font-bold">${overview.totalMonthlyRetainer.toLocaleString()}</strong></span>
                 <span>•</span>
-                <span>Attributed Pipeline: <strong className="text-black dark:text-white font-bold">${overview.attributedRevenue.toLocaleString()}</strong></span>
+                <span>Budget Managed: <strong className="text-black dark:text-white font-bold">${overview.totalBudgetManaged.toLocaleString()}</strong></span>
               </div>
             </div>
 
-            {/* 6 High-Impact Performance Metrics */}
+            {/* 6 Key Client Metrics */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               {[
-                { label: "Total Ad Spend", value: `$${overview.totalSpend.toLocaleString()}`, sub: "84.3% of budget", positive: true },
-                { label: "Pipeline Revenue", value: `$${overview.attributedRevenue.toLocaleString()}`, sub: "+24.1% MoM", positive: true },
-                { label: "Blended ROAS", value: `${overview.blendedRoas}x`, sub: "Industry top 5%", positive: true },
-                { label: "High-Intent MQLs", value: `${overview.totalConversions.toLocaleString()}`, sub: "98% ICP match", positive: true },
-                { label: "Blended CPA", value: `$${overview.avgCpa}`, sub: "-14.2% lower", positive: true },
-                { label: "Avg CTR", value: `${overview.avgCtr}%`, sub: "+0.8% benchmark", positive: true },
+                { label: "Total Retainer Revenue", value: `$${overview.totalMonthlyRetainer.toLocaleString()}`, sub: "+18.4% MoM", positive: true },
+                { label: "Total Managed Budget", value: `$${overview.totalBudgetManaged.toLocaleString()}`, sub: "4 active campaigns", positive: true },
+                { label: "Active Clients", value: `${overview.activeClients} / ${overview.totalClients}`, sub: "100% retention", positive: true },
+                { label: "Growth Projects", value: `${overview.activeProjects}`, sub: "Delivering on schedule", positive: true },
+                { label: "Client Assets", value: `${overview.totalAssets}`, sub: `${overview.assetsApproved} approved`, positive: true },
+                { label: "Pending Approvals", value: `${overview.assetsInReview}`, sub: "Review required", positive: false },
               ].map((kpi, idx) => (
                 <div key={idx} className={`rounded-2xl border p-4 ${whiteCard}`}>
                   <div className={`text-[11px] font-mono ${textMuted}`}>{kpi.label}</div>
                   <div className="text-xl font-bold font-mono mt-1 text-stone-900 dark:text-stone-100">{kpi.value}</div>
-                  <div className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 mt-1 font-semibold">{kpi.sub}</div>
+                  <div className={`text-[10px] font-mono mt-1 font-semibold ${kpi.positive ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                    {kpi.sub}
+                  </div>
                 </div>
               ))}
             </div>
 
-            {/* Spend vs Attributed Revenue Chart */}
-            <div className={`rounded-3xl border p-6 space-y-4 ${whiteCard}`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold text-sm font-mono uppercase tracking-wider text-stone-700 dark:text-stone-300">Revenue Trajectory (6 Months)</h3>
-                  <p className={`text-xs ${textMuted}`}>Ad Spend invested vs closed pipeline value</p>
-                </div>
-                <div className="flex items-center gap-4 text-xs font-mono text-stone-500">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-black dark:bg-white" />
-                    <span>Pipeline Revenue</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-stone-400" />
-                    <span>Ad Spend</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="h-[280px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={overview.monthlyTrends}>
-                    <defs>
-                      <linearGradient id="sandRevGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={dark ? "#ffffff" : "#111111"} stopOpacity={0.2} />
-                        <stop offset="95%" stopColor={dark ? "#ffffff" : "#111111"} stopOpacity={0.0} />
-                      </linearGradient>
-                      <linearGradient id="sandSpendGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#888888" stopOpacity={0.15} />
-                        <stop offset="95%" stopColor="#888888" stopOpacity={0.0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={dark ? "#30363d" : "#ede7dc"} vertical={false} />
-                    <XAxis dataKey="month" stroke="#888888" fontSize={11} tickLine={false} />
-                    <YAxis stroke="#888888" fontSize={11} tickLine={false} tickFormatter={(v) => `$${v / 1000}k`} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: dark ? "#161b22" : "#ffffff",
-                        borderColor: dark ? "#30363d" : "#ded8ce",
-                        borderRadius: "12px",
-                        fontSize: "12px",
-                      }}
-                      formatter={(val: any, name: string) => [
-                        `$${Number(val).toLocaleString()}`,
-                        name === "revenue" ? "Attributed Revenue" : "Ad Spend",
-                      ]}
-                    />
-                    <Area type="monotone" dataKey="revenue" stroke={dark ? "#ffffff" : "#111111"} strokeWidth={2.5} fillOpacity={1} fill="url(#sandRevGradient)" />
-                    <Area type="monotone" dataKey="spend" stroke="#888888" strokeWidth={1.5} strokeDasharray="4 4" fillOpacity={1} fill="url(#sandSpendGradient)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Channel Performance Grid */}
+            {/* Client Retainer Distribution Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {overview.channelDistribution.map((ch, idx) => (
+              {overview.clientPortfolio.map((cp, idx) => (
                 <div key={idx} className={`rounded-3xl border p-5 space-y-3 ${whiteCard}`}>
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm font-mono text-stone-800 dark:text-stone-200">{ch.name}</span>
-                    <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">{ch.roas}x ROAS</span>
+                    <span className="font-bold text-sm font-sans text-stone-900 dark:text-stone-100 truncate">{cp.name}</span>
+                    <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                      ${cp.retainer.toLocaleString()}/mo
+                    </span>
                   </div>
-                  <div className="space-y-1 text-xs font-mono">
-                    <div className="flex justify-between text-stone-500">
-                      <span>Ad Spend:</span>
-                      <strong className="text-stone-800 dark:text-stone-200">${ch.spend.toLocaleString()}</strong>
+                  <div className="space-y-1 text-xs font-mono text-stone-500">
+                    <div className="flex justify-between">
+                      <span>Active Projects:</span>
+                      <strong className="text-stone-800 dark:text-stone-200">{cp.projectCount}</strong>
                     </div>
-                    <div className="flex justify-between text-stone-500">
-                      <span>Attributed Rev:</span>
-                      <strong className="text-stone-800 dark:text-stone-200">${ch.revenue.toLocaleString()}</strong>
-                    </div>
-                    <div className="flex justify-between text-stone-500">
-                      <span>Conversions:</span>
-                      <strong className="text-stone-800 dark:text-stone-200">{ch.conversions} MQLs</strong>
+                    <div className="flex justify-between">
+                      <span>Assets on File:</span>
+                      <strong className="text-stone-800 dark:text-stone-200">{cp.assetCount}</strong>
                     </div>
                   </div>
-                  <div className="w-full h-1.5 bg-stone-200 dark:bg-stone-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-stone-900 dark:bg-white"
-                      style={{ width: `${Math.min(100, (ch.spend / overview.totalSpend) * 100 * 2.2)}%` }}
-                    />
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = clients.find((c) => c.name === cp.name);
+                        if (target) setSelectedClientId(target.id);
+                        setActiveTab("projects");
+                      }}
+                      className={`w-full rounded-full py-1 text-xs font-mono border transition ${pillOutline}`}
+                    >
+                      view client projects ↗
+                    </button>
                   </div>
                 </div>
               ))}
-            </div>
-
-            {/* AI Growth Copilot Recommendations */}
-            <div className={`rounded-3xl border p-6 space-y-4 ${sandCard}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-5 w-5 rounded-md bg-black text-white dark:bg-white dark:text-black flex items-center justify-center font-mono text-xs font-bold">
-                    AI
-                  </div>
-                  <h3 className="font-bold text-sm font-mono uppercase tracking-wider">Growth Recommendations Engine</h3>
-                </div>
-                <span className="text-[11px] font-mono text-stone-500">3 high-conviction optimizations</span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {overview.aiInsights.map((insight) => (
-                  <div key={insight.id} className={`rounded-2xl border p-4 space-y-3 flex flex-col justify-between ${whiteCard}`}>
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px] font-mono">
-                        <span className={`px-2 py-0.5 rounded-full font-bold ${
-                          insight.priority === "HIGH" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400" : pillSand
-                        }`}>
-                          {insight.priority}
-                        </span>
-                        <span className="font-semibold text-stone-500">{insight.impact}</span>
-                      </div>
-                      <h4 className="font-bold text-xs font-sans text-stone-900 dark:text-stone-100">{insight.title}</h4>
-                      <p className={`text-[11px] ${textSub} leading-relaxed`}>{insight.description}</p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleApplyAiRecommendation(insight.title)}
-                      className={`w-full rounded-full py-1.5 text-xs font-medium transition ${pillBlack}`}
-                    >
-                      apply recommendation ↗
-                    </button>
-                  </div>
-                ))}
-              </div>
             </div>
           </section>
         )}
 
-        {/* VIEW: CAMPAIGNS HUB */}
-        {activeTab === "campaigns" && (
+        {/* ========================================================================= */}
+        {/* VIEW 2: CLIENTS DIRECTORY */}
+        {/* ========================================================================= */}
+        {activeTab === "clients" && (
           <section className="space-y-6 pt-4 border-t border-inherit">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold font-editorial">Active Ad Campaigns</h2>
-                <p className={`text-xs ${textMuted}`}>Manage spend allocation, pause/resume delivery, and track ROAS.</p>
+                <h2 className="text-2xl font-bold font-editorial">Client Brands & Retainers</h2>
+                <p className={`text-xs ${textMuted}`}>Manage client contracts, primary contacts, industries, and service levels.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowNewCampaignModal(true)}
-                className={`flex items-center gap-1.5 rounded-full px-5 py-2.5 text-xs font-medium ${pillBlack}`}
-              >
-                <span>+ Launch New Campaign</span>
-                <ArrowUpRight size={14} />
-              </button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={exportClientsCsv}
+                  className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium border ${pillOutline}`}
+                >
+                  <Download size={13} />
+                  <span>Export Clients</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddClientModal(true)}
+                  className={`flex items-center gap-1.5 rounded-full px-5 py-2 text-xs font-medium ${pillBlack}`}
+                >
+                  <span>+ Onboard New Client</span>
+                  <ArrowUpRight size={14} />
+                </button>
+              </div>
             </div>
 
-            {/* Filter Pills & Search */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-              <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
-                <span className="text-stone-400 text-[11px] mr-1">Platform:</span>
-                {["ALL", "Google Ads", "Meta Ads", "LinkedIn Ads", "YouTube Ads"].map((p) => (
+            {/* Client Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredClients.map((client) => {
+                const clientProjects = projects.filter((p) => p.client_id === client.id);
+                const clientAssets = assets.filter((a) => a.client_id === client.id);
+
+                return (
+                  <div key={client.id} className={`rounded-3xl border p-6 flex flex-col justify-between space-y-4 ${whiteCard}`}>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-mono font-medium ${
+                          client.status === "ACTIVE" ? pillBlack : pillSand
+                        }`}>
+                          {client.status}
+                        </span>
+                        <span className="text-emerald-600 font-bold font-mono text-sm">
+                          ${client.monthly_retainer.toLocaleString()}/mo
+                        </span>
+                      </div>
+
+                      <div>
+                        <h3 className="font-bold text-lg font-sans text-stone-900 dark:text-stone-100">{client.name}</h3>
+                        <p className={`text-xs ${textSub} font-mono mt-0.5`}>{client.industry}</p>
+                      </div>
+
+                      <div className={`p-3 rounded-2xl border ${sandCard} space-y-1.5 text-xs font-mono`}>
+                        <div className="flex items-center justify-between text-stone-500">
+                          <span>Contact Person:</span>
+                          <span className="font-semibold text-stone-900 dark:text-stone-100">{client.contact_name}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-stone-500">
+                          <span>Email:</span>
+                          <a href={`mailto:${client.contact_email}`} className="text-blue-600 dark:text-blue-400 hover:underline">
+                            {client.contact_email}
+                          </a>
+                        </div>
+                        {client.website && (
+                          <div className="flex items-center justify-between text-stone-500">
+                            <span>Website:</span>
+                            <a href={client.website} target="_blank" rel="noreferrer" className="text-stone-600 dark:text-stone-400 hover:underline flex items-center gap-1">
+                              <span>{client.website.replace(/^https?:\/\//, "")}</span>
+                              <ExternalLink size={10} />
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-center text-xs font-mono">
+                        <div className={`p-2 rounded-xl border ${sandCard}`}>
+                          <div className="text-stone-400 text-[10px]">Active Projects</div>
+                          <div className="font-bold text-stone-800 dark:text-stone-200 mt-0.5">{clientProjects.length}</div>
+                        </div>
+                        <div className={`p-2 rounded-xl border ${sandCard}`}>
+                          <div className="text-stone-400 text-[10px]">Client Assets</div>
+                          <div className="font-bold text-stone-800 dark:text-stone-200 mt-0.5">{clientAssets.length}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-inherit">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedClientId(client.id);
+                            setActiveTab("projects");
+                          }}
+                          className={`rounded-full px-3 py-1 text-xs font-mono border ${pillOutline}`}
+                        >
+                          Projects ({clientProjects.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedClientId(client.id);
+                            setActiveTab("assets");
+                          }}
+                          className={`rounded-full px-3 py-1 text-xs font-mono border ${pillOutline}`}
+                        >
+                          Assets ({clientAssets.length})
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setEditingClient(client)}
+                          className={`rounded-full p-1.5 border ${pillOutline}`}
+                          title="Edit Client"
+                        >
+                          <Edit3 size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteClient(client.id)}
+                          className="text-stone-400 hover:text-red-500 transition p-1.5"
+                          title="Delete Client"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 3: CLIENT PROJECTS */}
+        {/* ========================================================================= */}
+        {activeTab === "projects" && (
+          <section className="space-y-6 pt-4 border-t border-inherit">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-bold font-editorial">Client Marketing Projects</h2>
+                <p className={`text-xs ${textMuted}`}>Deliverable schedules, ad spend budgets, and ROAS performance targets.</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={exportProjectsCsv}
+                  className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium border ${pillOutline}`}
+                >
+                  <Download size={13} />
+                  <span>Export Projects</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddProjectModal(true)}
+                  className={`flex items-center gap-1.5 rounded-full px-5 py-2 text-xs font-medium ${pillBlack}`}
+                >
+                  <span>+ Create Client Project</span>
+                  <ArrowUpRight size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+                <span className="text-stone-400">Filter Client:</span>
+                <select
+                  value={selectedClientId}
+                  onChange={(e) => setSelectedClientId(e.target.value)}
+                  className={`rounded-full px-3 py-1 text-xs font-mono border outline-none ${whiteCard}`}
+                >
+                  <option value="ALL">All Clients ({projects.length})</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+
+                <span className="text-stone-400 ml-2">Category:</span>
+                {["ALL", "Paid Search", "Paid Social", "Brand & Creative"].map((cat) => (
                   <button
-                    key={p}
-                    onClick={() => setPlatformFilter(p)}
+                    key={cat}
+                    onClick={() => setProjectCategoryFilter(cat)}
                     className={`rounded-full px-3 py-1 text-[11px] font-medium transition ${
-                      platformFilter === p ? (dark ? "bg-white text-black" : "bg-black text-white") : pillOutline
+                      projectCategoryFilter === cat ? (dark ? "bg-white text-black" : "bg-black text-white") : pillOutline
                     }`}
                   >
-                    {p}
+                    {cat}
                   </button>
                 ))}
               </div>
@@ -889,7 +1160,7 @@ export default function DigitalMarketingWorkspace({
                   <Search size={13} className="text-stone-400" />
                   <input
                     type="text"
-                    placeholder="Search campaigns..."
+                    placeholder="Search projects..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="bg-transparent outline-none text-xs w-36 sm:w-44"
@@ -900,83 +1171,74 @@ export default function DigitalMarketingWorkspace({
                     </button>
                   )}
                 </div>
-
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-mono border outline-none ${whiteCard}`}
-                >
-                  <option value="ALL">All Status</option>
-                  <option value="ACTIVE">Active</option>
-                  <option value="PAUSED">Paused</option>
-                </select>
               </div>
             </div>
 
-            {/* Campaign Table */}
+            {/* Projects Table */}
             <div className={`rounded-3xl border overflow-hidden ${whiteCard}`}>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs font-mono">
                   <thead className={`border-b ${dark ? "border-[#30363d] bg-[#161b22]" : "border-[#ede7dc] bg-[#f8f5ee]"} text-stone-400 text-[11px]`}>
                     <tr>
-                      <th className="px-6 py-3.5">Campaign Name</th>
-                      <th className="px-6 py-3.5">Platform</th>
+                      <th className="px-6 py-3.5">Project Title & Deliverables</th>
+                      <th className="px-6 py-3.5">Client & Category</th>
                       <th className="px-6 py-3.5">Spend / Budget</th>
-                      <th className="px-6 py-3.5">Clicks & Conv.</th>
-                      <th className="px-6 py-3.5">ROAS</th>
+                      <th className="px-6 py-3.5">Target ROAS</th>
+                      <th className="px-6 py-3.5">Deadline</th>
                       <th className="px-6 py-3.5">Status</th>
                       <th className="px-6 py-3.5 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-inherit">
-                    {filteredCampaigns.map((camp) => (
-                      <tr key={camp.id} className="hover:bg-stone-500/5 transition">
+                    {filteredProjects.map((proj) => (
+                      <tr key={proj.id} className="hover:bg-stone-500/5 transition">
                         <td className="px-6 py-4">
-                          <div className="font-sans font-bold text-sm text-stone-900 dark:text-stone-100">{camp.name}</div>
-                          <div className="text-[10px] text-stone-400 mt-0.5">{camp.channel} • {camp.objective}</div>
+                          <div className="font-sans font-bold text-sm text-stone-900 dark:text-stone-100">{proj.title}</div>
+                          <div className="text-[10px] text-stone-400 mt-0.5 max-w-sm truncate">{proj.deliverables}</div>
                         </td>
-                        <td className="px-6 py-4 text-stone-600 dark:text-stone-300 font-semibold">{camp.platform}</td>
+                        <td className="px-6 py-4">
+                          <div className="font-semibold text-stone-800 dark:text-stone-200">{proj.client_name}</div>
+                          <div className="text-[10px] text-stone-400">{proj.category}</div>
+                        </td>
                         <td className="px-6 py-4">
                           <div className="text-stone-800 dark:text-stone-200 font-semibold">
-                            ${camp.spend.toLocaleString()} / <span className="text-stone-400 font-normal">${camp.budget.toLocaleString()}</span>
+                            ${proj.spend.toLocaleString()} / <span className="text-stone-400 font-normal">${proj.budget.toLocaleString()}</span>
                           </div>
                           <div className="w-24 h-1 bg-stone-200 dark:bg-stone-700 rounded-full mt-1.5 overflow-hidden">
                             <div
                               className="h-full bg-black dark:bg-white rounded-full"
-                              style={{ width: `${Math.min(100, camp.budget > 0 ? (camp.spend / camp.budget) * 100 : 0)}%` }}
+                              style={{ width: `${Math.min(100, proj.budget > 0 ? (proj.spend / proj.budget) * 100 : 0)}%` }}
                             />
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-stone-600 dark:text-stone-400">
-                          <div>{camp.clicks.toLocaleString()} clicks</div>
-                          <div className="text-[10px] text-emerald-600 font-semibold">{camp.conversions} conversions</div>
+                        <td className="px-6 py-4 font-bold text-emerald-600 dark:text-emerald-400">
+                          {proj.current_roas}x <span className="text-stone-400 text-[10px] font-normal">({proj.target_roas}x goal)</span>
                         </td>
-                        <td className="px-6 py-4 font-bold text-emerald-600 dark:text-emerald-400">{camp.roas}x</td>
+                        <td className="px-6 py-4 text-stone-500">{proj.deadline}</td>
                         <td className="px-6 py-4">
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-medium ${
-                            camp.status === "ACTIVE" ? pillBlack : pillSand
-                          }`}>
-                            {camp.status.toLowerCase()}
-                          </span>
+                          <select
+                            value={proj.status}
+                            onChange={(e) => handleUpdateProjectStatus(proj.id, e.target.value as any)}
+                            className={`rounded-full px-2.5 py-0.5 text-[10px] font-mono border outline-none ${
+                              proj.status === "ACTIVE" ? pillBlack : pillSand
+                            }`}
+                          >
+                            <option value="PLANNING">PLANNING</option>
+                            <option value="IN_PROGRESS">IN_PROGRESS</option>
+                            <option value="IN_REVIEW">IN_REVIEW</option>
+                            <option value="ACTIVE">ACTIVE</option>
+                            <option value="COMPLETED">COMPLETED</option>
+                          </select>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleCampaignStatus(camp.id)}
-                              className={`rounded-full px-3 py-1 text-[11px] border ${pillOutline}`}
-                            >
-                              {camp.status === "ACTIVE" ? "pause" : "resume"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteCampaign(camp.id)}
-                              className="text-stone-400 hover:text-red-500 transition p-1"
-                              title="Delete Campaign"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProject(proj.id)}
+                            className="text-stone-400 hover:text-red-500 transition p-1"
+                            title="Delete Project"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -987,260 +1249,263 @@ export default function DigitalMarketingWorkspace({
           </section>
         )}
 
-        {/* VIEW: CREATIVE LAB */}
-        {activeTab === "creatives" && (
+        {/* ========================================================================= */}
+        {/* VIEW 4: CLIENT ASSETS HUB */}
+        {/* ========================================================================= */}
+        {activeTab === "assets" && (
           <section className="space-y-6 pt-4 border-t border-inherit">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold font-editorial">Creative Library & Copy</h2>
-                <p className={`text-xs ${textMuted}`}>Tested ad hooks, headlines, and narrative scripts across formats.</p>
+                <h2 className="text-2xl font-bold font-editorial">Client Creative & Ad Assets</h2>
+                <p className={`text-xs ${textMuted}`}>Ad copy, video hook scripts, Figma files, and design assets organized per client brand.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowNewCreativeModal(true)}
-                className={`rounded-full px-4 py-2 text-xs font-medium ${pillBlack}`}
-              >
-                + Register Creative Asset
-              </button>
-            </div>
 
-            {/* Format Filter Pills */}
-            <div className="flex items-center gap-1.5 text-xs font-mono">
-              <span className="text-stone-400 text-[11px] mr-1">Format:</span>
-              {["ALL", "Video", "Carousel", "Single Image", "Story"].map((fmt) => (
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  key={fmt}
-                  onClick={() => setCreativeFormatFilter(fmt)}
-                  className={`rounded-full px-3 py-1 text-[11px] font-medium transition ${
-                    creativeFormatFilter === fmt ? (dark ? "bg-white text-black" : "bg-black text-white") : pillOutline
-                  }`}
+                  type="button"
+                  onClick={exportAssetsCsv}
+                  className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium border ${pillOutline}`}
                 >
-                  {fmt}
+                  <Download size={13} />
+                  <span>Export Assets</span>
                 </button>
-              ))}
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredCreatives.map((cr) => (
-                <div key={cr.id} className={`rounded-3xl border p-5 flex flex-col justify-between space-y-4 ${whiteCard}`}>
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between text-[11px] font-mono">
-                      <span className={`rounded-full px-2.5 py-0.5 ${pillSand}`}>{cr.format}</span>
-                      <span className="text-emerald-600 font-semibold font-mono">CTR {cr.ctr}% • Conv {cr.conversion_rate}%</span>
-                    </div>
-                    <h3 className="font-bold text-base font-sans text-stone-900 dark:text-stone-100">{cr.headline}</h3>
-                    <p className={`text-xs ${textSub} leading-relaxed`}>{cr.primary_text}</p>
-                  </div>
-
-                  <div className={`p-3 rounded-2xl border ${sandCard} flex items-center justify-between text-xs font-mono`}>
-                    <span className="text-stone-500">CTA: {cr.cta}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(`${cr.headline}\n\n${cr.primary_text}`);
-                        triggerNotice("Ad copy copied to clipboard!");
-                      }}
-                      className="text-stone-900 dark:text-white font-semibold flex items-center gap-1 hover:underline"
-                    >
-                      <Copy size={12} />
-                      <span>copy ad copy</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* VIEW: INBOUND LEADS & CRM SYNC */}
-        {activeTab === "leads" && (
-          <section className="space-y-6 pt-4 border-t border-inherit">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-bold font-editorial">Inbound Campaign Leads</h2>
-                <p className={`text-xs ${textMuted}`}>Ad-attributed leads ready for 1-click sync to the ZootechX CRM Sales pipeline.</p>
+                <button
+                  type="button"
+                  onClick={() => setShowAddAssetModal(true)}
+                  className={`flex items-center gap-1.5 rounded-full px-5 py-2 text-xs font-medium ${pillBlack}`}
+                >
+                  <span>+ Add Client Asset</span>
+                  <ArrowUpRight size={14} />
+                </button>
               </div>
+            </div>
 
-              {/* Quality score filter */}
-              <div className="flex items-center gap-1.5 text-xs font-mono">
-                <span className="text-stone-400 text-[11px] mr-1">Quality:</span>
-                {["ALL", "HOT", "HIGH_INTENT", "WARM"].map((q) => (
+            {/* Filter Pills */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+                <span className="text-stone-400">Client:</span>
+                <select
+                  value={selectedClientId}
+                  onChange={(e) => setSelectedClientId(e.target.value)}
+                  className={`rounded-full px-3 py-1 text-xs font-mono border outline-none ${whiteCard}`}
+                >
+                  <option value="ALL">All Clients ({assets.length})</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+
+                <span className="text-stone-400 ml-2">Review Status:</span>
+                {["ALL", "APPROVED", "IN_REVIEW", "NEEDS_REVISION", "DRAFT"].map((st) => (
                   <button
-                    key={q}
-                    onClick={() => setLeadQualityFilter(q)}
+                    key={st}
+                    onClick={() => setAssetStatusFilter(st)}
                     className={`rounded-full px-3 py-1 text-[11px] font-medium transition ${
-                      leadQualityFilter === q ? (dark ? "bg-white text-black" : "bg-black text-white") : pillOutline
+                      assetStatusFilter === st ? (dark ? "bg-white text-black" : "bg-black text-white") : pillOutline
                     }`}
                   >
-                    {q}
+                    {st}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className={`rounded-3xl border overflow-hidden ${whiteCard}`}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead className={`border-b ${dark ? "border-[#30363d] bg-[#161b22]" : "border-[#ede7dc] bg-[#f8f5ee]"} text-stone-400 text-[11px]`}>
-                    <tr>
-                      <th className="px-6 py-3.5">Lead Contact</th>
-                      <th className="px-6 py-3.5">Company</th>
-                      <th className="px-6 py-3.5">Ad Attribution</th>
-                      <th className="px-6 py-3.5">Quality</th>
-                      <th className="px-6 py-3.5 text-right">CRM Sync</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-inherit">
-                    {filteredLeads.map((lead) => (
-                      <tr key={lead.id} className="hover:bg-stone-500/5 transition">
-                        <td className="px-6 py-4">
-                          <div className="font-sans font-bold text-stone-900 dark:text-stone-100">{lead.lead_name}</div>
-                          <div className="text-[11px] text-stone-400">{lead.email} • {lead.phone}</div>
-                        </td>
-                        <td className="px-6 py-4 font-sans font-medium text-stone-700 dark:text-stone-300">{lead.company}</td>
-                        <td className="px-6 py-4 text-stone-500">{lead.campaign_name} ({lead.platform})</td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                            lead.quality_score === "HOT"
-                              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                              : lead.quality_score === "HIGH_INTENT"
-                              ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-                              : pillSand
-                          }`}>
-                            {lead.quality_score}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          {lead.synced_to_crm ? (
-                            <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold text-[11px]">
-                              <CheckCheck size={13} /> synced to crm
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleSyncLeadToCrm(lead.id)}
-                              disabled={syncingLeadId === lead.id}
-                              className={`rounded-full px-3.5 py-1 text-[11px] font-medium transition ${pillBlack}`}
-                            >
-                              {syncingLeadId === lead.id ? "syncing..." : "sync to crm ↗"}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* VIEW: SEO INTELLIGENCE */}
-        {activeTab === "seo" && (
-          <section className="space-y-6 pt-4 border-t border-inherit">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-bold font-editorial">SEO & Organic Rankings</h2>
-                <p className={`text-xs ${textMuted}`}>Search position tracking for high-intent ERP, billing, and enterprise software queries.</p>
-              </div>
-
-              {/* Add Keyword input */}
-              <form onSubmit={handleAddSeoKeyword} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="Enter keyword to track..."
-                  value={newKeywordInput}
-                  onChange={(e) => setNewKeywordInput(e.target.value)}
-                  className={`rounded-full px-4 py-1.5 text-xs font-mono border outline-none ${whiteCard}`}
-                />
-                <button
-                  type="submit"
-                  className={`rounded-full px-4 py-1.5 text-xs font-medium ${pillBlack}`}
-                >
-                  + track
-                </button>
-              </form>
-            </div>
-
-            <div className={`rounded-3xl border overflow-hidden ${whiteCard}`}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead className={`border-b ${dark ? "border-[#30363d] bg-[#161b22]" : "border-[#ede7dc] bg-[#f8f5ee]"} text-stone-400 text-[11px]`}>
-                    <tr>
-                      <th className="px-6 py-3.5">Keyword</th>
-                      <th className="px-6 py-3.5 text-center">Google Rank</th>
-                      <th className="px-6 py-3.5 text-right">Search Volume</th>
-                      <th className="px-6 py-3.5 text-right">Organic Clicks</th>
-                      <th className="px-6 py-3.5 text-right">30d Movement</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-inherit">
-                    {seoKeywords.map((kw, idx) => (
-                      <tr key={idx} className="hover:bg-stone-500/5 transition">
-                        <td className="px-6 py-4 font-sans font-semibold text-stone-800 dark:text-stone-200">{kw.keyword}</td>
-                        <td className="px-6 py-4 text-center font-bold">#{kw.rank}</td>
-                        <td className="px-6 py-4 text-right text-stone-500">{kw.volume.toLocaleString()}/mo</td>
-                        <td className="px-6 py-4 text-right text-stone-700 dark:text-stone-300 font-semibold">{kw.clicks.toLocaleString()}</td>
-                        <td className="px-6 py-4 text-right text-emerald-600 font-semibold">{kw.change}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* VIEW: AD CHANNELS & INTEGRATIONS */}
-        {activeTab === "integrations" && (
-          <section className="space-y-6 pt-4 border-t border-inherit">
-            <div>
-              <h2 className="text-2xl font-bold font-editorial">Ad Networks & Data Streams</h2>
-              <p className={`text-xs ${textMuted}`}>Live telemetry connectors to Google Ads, Meta Business, LinkedIn and Analytics.</p>
-            </div>
-
+            {/* Asset Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[
-                { name: "Google Ads API", id: "google-ads", status: "Active Stream", frequency: "Real-time Webhook", account: "ZootechX Growth Enterprise (412-980-112)" },
-                { name: "Meta Business Marketing API", id: "meta-ads", status: "Active Stream", frequency: "Conversions API (CAPI)", account: "ZootechX Global Pixel (px_994102)" },
-                { name: "LinkedIn Campaign Manager", id: "linkedin-ads", status: "Active Stream", frequency: "Lead Gen Sync (15m)", account: "ZootechX Corporate Tech (li_448201)" },
-                { name: "Google Analytics 4 (GA4)", id: "ga4", status: "Active Stream", frequency: "Event Telemetry", account: "G-ZOOTECHX992 (Measurement ID)" },
-              ].map((conn, idx) => (
-                <div key={idx} className={`rounded-3xl border p-5 flex flex-col justify-between space-y-4 ${whiteCard}`}>
-                  <div className="space-y-2">
+              {filteredAssets.map((asset) => (
+                <div key={asset.id} className={`rounded-3xl border p-5 flex flex-col justify-between space-y-4 ${whiteCard}`}>
+                  <div className="space-y-2.5">
                     <div className="flex items-center justify-between text-[11px] font-mono">
-                      <span className="inline-flex items-center gap-1.5 text-emerald-600 font-semibold">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        {conn.status}
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full px-2.5 py-0.5 ${pillSand}`}>{asset.file_format}</span>
+                        <span className="text-stone-400">• {asset.version}</span>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        asset.status === "APPROVED"
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+                          : asset.status === "IN_REVIEW"
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                          : pillSand
+                      }`}>
+                        {asset.status}
                       </span>
-                      <span className="text-stone-400">{conn.frequency}</span>
                     </div>
-                    <h3 className="font-bold text-base font-sans text-stone-900 dark:text-stone-100">{conn.name}</h3>
-                    <p className="text-xs font-mono text-stone-500">{conn.account}</p>
+
+                    <div>
+                      <h3 className="font-bold text-base font-sans text-stone-900 dark:text-stone-100">{asset.name}</h3>
+                      <div className="flex items-center gap-2 text-xs font-mono text-stone-500 mt-0.5">
+                        <span className="font-semibold text-stone-700 dark:text-stone-300">{asset.client_name}</span>
+                        {asset.project_title && <span>• {asset.project_title}</span>}
+                      </div>
+                    </div>
+
+                    {asset.notes && (
+                      <p className={`text-xs ${textSub} leading-relaxed`}>{asset.notes}</p>
+                    )}
                   </div>
 
-                  <div className="flex items-center justify-between pt-2">
-                    <span className="text-[11px] font-mono text-stone-400">Latency: 28ms</span>
-                    <button
-                      type="button"
-                      onClick={() => triggerNotice(`${conn.name} ping verified: 100% healthy, 0 packet loss.`)}
-                      className={`rounded-full px-3.5 py-1 text-xs font-mono border ${pillOutline}`}
-                    >
-                      test connection
-                    </button>
+                  <div className={`p-3 rounded-2xl border ${sandCard} flex flex-wrap items-center justify-between gap-2 text-xs font-mono`}>
+                    <span className="text-stone-500 truncate max-w-[200px]">{asset.asset_url}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewingAsset(asset)}
+                        className="text-stone-900 dark:text-white font-semibold flex items-center gap-1 hover:underline"
+                      >
+                        <Eye size={12} />
+                        <span>Inspect & Review</span>
+                      </button>
+
+                      <a
+                        href={asset.asset_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={`rounded-full p-1 border ${pillOutline}`}
+                        title="Open External URL"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAsset(asset.id)}
+                        className="text-stone-400 hover:text-red-500 transition p-1"
+                        title="Delete Asset"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
+            </div>
+          </section>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 5: LIVE AD MOCKUPS */}
+        {/* ========================================================================= */}
+        {activeTab === "mockups" && (
+          <section className="space-y-6 pt-4 border-t border-inherit">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-bold font-editorial">Live Multi-Channel Ad Simulator</h2>
+                <p className={`text-xs ${textMuted}`}>Preview how client copy and creative assets render live across search, feed, and inmail channels.</p>
+              </div>
+
+              {/* Format Mockup Switcher */}
+              <div className="flex items-center gap-1.5 font-mono text-xs">
+                {(["google", "linkedin", "meta"] as const).map((fmt) => (
+                  <button
+                    key={fmt}
+                    onClick={() => setMockupFormat(fmt)}
+                    className={`rounded-full px-3.5 py-1 font-medium capitalize transition ${
+                      mockupFormat === fmt ? (dark ? "bg-white text-black" : "bg-black text-white") : pillOutline
+                    }`}
+                  >
+                    {fmt === "google" ? "Google Search" : fmt === "linkedin" ? "LinkedIn Feed" : "Meta / Instagram"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Mockup Frame */}
+            <div className={`max-w-2xl mx-auto rounded-3xl border p-6 sm:p-8 space-y-4 ${sandCard}`}>
+              {mockupFormat === "google" && (
+                <div className="space-y-2 text-left">
+                  <div className="flex items-center gap-2 text-[11px] font-mono text-stone-500">
+                    <span className="font-bold text-black dark:text-white">Sponsored</span>
+                    <span>•</span>
+                    <span>https://apexlogistics.io/enterprise-freight</span>
+                  </div>
+                  <h4 className="text-lg font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer">
+                    Apex Global Logistics | Automated Freight & Multi-Modal Supply Chain
+                  </h4>
+                  <p className={`text-xs ${textSub} leading-relaxed`}>
+                    Scale distribution by 10x with zero tracking latency. Instant custom quotes, automated freight compliance, and guaranteed SLA fulfillment for global enterprises.
+                  </p>
+                  <div className="pt-3 flex flex-wrap gap-3 text-xs text-blue-600 dark:text-blue-400">
+                    <span className="cursor-pointer hover:underline">Get Instant Freight Rate</span>
+                    <span>•</span>
+                    <span className="cursor-pointer hover:underline">Enterprise API Docs</span>
+                    <span>•</span>
+                    <span className="cursor-pointer hover:underline">Schedule Supply Review</span>
+                  </div>
+                </div>
+              )}
+
+              {mockupFormat === "linkedin" && (
+                <div className="space-y-3 text-left">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-full bg-black text-white flex items-center justify-center font-serif font-bold text-sm">
+                      Z
+                    </div>
+                    <div>
+                      <div className="font-bold text-sm text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                        <span>Zenith Health Systems</span>
+                        <span className="text-[10px] text-stone-400 font-mono">• Promoted</span>
+                      </div>
+                      <div className="text-[11px] text-stone-400 font-mono">Telemedicine & Rapid Patient Scheduling Platform</div>
+                    </div>
+                  </div>
+                  <p className={`text-xs ${textSub} leading-relaxed`}>
+                    Patients shouldn't wait 3 weeks for essential diagnostics. Discover how leading clinics decreased appointment no-shows by 44% with localized HIPAA-compliant scheduling.
+                  </p>
+                  <div className={`rounded-2xl border overflow-hidden ${whiteCard}`}>
+                    <div className="h-44 bg-stone-300 dark:bg-stone-800 flex items-center justify-center text-stone-400 font-mono text-xs">
+                      [Clinical Video Creative: Doctor Trust Hook Script v3]
+                    </div>
+                    <div className="p-4 flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] text-stone-400 uppercase font-mono">zenithhealth.org</div>
+                        <div className="font-bold text-xs text-stone-900 dark:text-stone-100">National Clinic Patient Booking Suite</div>
+                      </div>
+                      <button type="button" className={`rounded-full px-4 py-1.5 text-xs font-semibold ${pillBlack}`}>
+                        Book Clinic Demo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {mockupFormat === "meta" && (
+                <div className="space-y-3 text-left">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-full bg-stone-900 text-white flex items-center justify-center font-bold text-xs font-serif">
+                      A
+                    </div>
+                    <div>
+                      <div className="font-bold text-xs">auraretail.official</div>
+                      <div className="text-[10px] text-stone-400">Sponsored</div>
+                    </div>
+                  </div>
+                  <p className={`text-xs ${textSub} leading-relaxed`}>
+                    Early Access: The Luxury Autumn Collection has arrived. Crafted with organic silks and tailored cuts. Limited run of 250 units worldwide.
+                  </p>
+                  <div className={`rounded-2xl border overflow-hidden ${whiteCard}`}>
+                    <div className="h-48 bg-stone-200 dark:bg-stone-800 flex items-center justify-center text-stone-400 font-mono text-xs">
+                      [Black Friday Carousel Graphic: Story & Reel Motion Asset]
+                    </div>
+                    <div className="p-3.5 flex items-center justify-between">
+                      <span className="font-bold text-xs">Shop Autumn Collective</span>
+                      <button type="button" className={`rounded-full px-4 py-1.5 text-xs font-semibold ${pillBlack}`}>
+                        Shop Now
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         )}
       </main>
 
       {/* ========================================================================= */}
-      {/* MODAL: LAUNCH NEW CAMPAIGN */}
+      {/* MODAL 1: ADD NEW CLIENT */}
       {/* ========================================================================= */}
       <AnimatePresence>
-        {showNewCampaignModal && (
+        {showAddClientModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }}
@@ -1250,66 +1515,90 @@ export default function DigitalMarketingWorkspace({
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-lg font-editorial">Launch New Campaign</h3>
-                  <p className={`text-xs ${textMuted}`}>Create and track multi-channel ad delivery.</p>
+                  <h3 className="font-bold text-lg font-editorial">Onboard New Client</h3>
+                  <p className={`text-xs ${textMuted}`}>Register a client brand into the marketing roster.</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowNewCampaignModal(false)}
+                  onClick={() => setShowAddClientModal(false)}
                   className="rounded-full p-1 text-stone-400 hover:text-black dark:hover:text-white"
                 >
                   <X size={16} />
                 </button>
               </div>
 
-              <form onSubmit={handleCreateCampaign} className="space-y-3.5 text-xs font-mono">
+              <form onSubmit={handleCreateClient} className="space-y-3.5 text-xs font-mono">
                 <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">campaign name</label>
+                  <label className="block text-[11px] text-stone-500 mb-1">Company / Brand Name</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Q4 Growth Invoicing Push"
-                    value={newCampaignForm.name}
-                    onChange={(e) => setNewCampaignForm({ ...newCampaignForm, name: e.target.value })}
+                    placeholder="e.g. Apex Global Logistics"
+                    value={clientForm.name}
+                    onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })}
                     className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-2.5">
                   <div>
-                    <label className="block text-[11px] text-stone-500 mb-1">platform</label>
-                    <select
-                      value={newCampaignForm.platform}
-                      onChange={(e) => setNewCampaignForm({ ...newCampaignForm, platform: e.target.value })}
-                      className={`w-full rounded-full px-3.5 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
-                    >
-                      <option value="Google Ads">Google Ads</option>
-                      <option value="Meta Ads">Meta Ads</option>
-                      <option value="LinkedIn Ads">LinkedIn Ads</option>
-                      <option value="YouTube Ads">YouTube Ads</option>
-                    </select>
+                    <label className="block text-[11px] text-stone-500 mb-1">Industry</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. HealthTech, SaaS"
+                      value={clientForm.industry}
+                      onChange={(e) => setClientForm({ ...clientForm, industry: e.target.value })}
+                      className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                    />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] text-stone-500 mb-1">budget ($ / ₹)</label>
+                    <label className="block text-[11px] text-stone-500 mb-1">Monthly Retainer ($)</label>
                     <input
                       type="number"
                       required
-                      min={100}
-                      value={newCampaignForm.budget}
-                      onChange={(e) => setNewCampaignForm({ ...newCampaignForm, budget: Number(e.target.value) })}
+                      min={0}
+                      value={clientForm.monthly_retainer}
+                      onChange={(e) => setClientForm({ ...clientForm, monthly_retainer: Number(e.target.value) })}
+                      className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">Contact Person</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Elena Rostova"
+                      value={clientForm.contact_name}
+                      onChange={(e) => setClientForm({ ...clientForm, contact_name: e.target.value })}
+                      className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">Contact Email</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="elena@company.com"
+                      value={clientForm.contact_email}
+                      onChange={(e) => setClientForm({ ...clientForm, contact_email: e.target.value })}
                       className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">target audience</label>
+                  <label className="block text-[11px] text-stone-500 mb-1">Website URL (optional)</label>
                   <input
-                    type="text"
-                    placeholder="e.g. Clinics, Logistics, SMEs, Founders"
-                    value={newCampaignForm.targetAudience}
-                    onChange={(e) => setNewCampaignForm({ ...newCampaignForm, targetAudience: e.target.value })}
+                    type="url"
+                    placeholder="https://clientwebsite.com"
+                    value={clientForm.website}
+                    onChange={(e) => setClientForm({ ...clientForm, website: e.target.value })}
                     className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
                   />
                 </div>
@@ -1317,7 +1606,7 @@ export default function DigitalMarketingWorkspace({
                 <div className="pt-2 flex items-center justify-end gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowNewCampaignModal(false)}
+                    onClick={() => setShowAddClientModal(false)}
                     className="rounded-full px-4 py-2 text-stone-400 hover:text-black dark:hover:text-white"
                   >
                     cancel
@@ -1326,7 +1615,7 @@ export default function DigitalMarketingWorkspace({
                     type="submit"
                     className={`rounded-full px-5 py-2 font-medium ${pillBlack}`}
                   >
-                    deploy campaign ↗
+                    onboard client ↗
                   </button>
                 </div>
               </form>
@@ -1336,10 +1625,10 @@ export default function DigitalMarketingWorkspace({
       </AnimatePresence>
 
       {/* ========================================================================= */}
-      {/* MODAL: REGISTER CREATIVE */}
+      {/* MODAL 2: EDIT CLIENT */}
       {/* ========================================================================= */}
       <AnimatePresence>
-        {showNewCreativeModal && (
+        {editingClient && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }}
@@ -1349,66 +1638,336 @@ export default function DigitalMarketingWorkspace({
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-lg font-editorial">Register Creative Asset</h3>
-                  <p className={`text-xs ${textMuted}`}>Add tested headlines and narrative copy.</p>
+                  <h3 className="font-bold text-lg font-editorial">Edit Client Profile</h3>
+                  <p className={`text-xs ${textMuted}`}>{editingClient.name}</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowNewCreativeModal(false)}
+                  onClick={() => setEditingClient(null)}
                   className="rounded-full p-1 text-stone-400 hover:text-black dark:hover:text-white"
                 >
                   <X size={16} />
                 </button>
               </div>
 
-              <form onSubmit={handleCreateCreative} className="space-y-3.5 text-xs font-mono">
+              <form onSubmit={handleUpdateClient} className="space-y-3.5 text-xs font-mono">
                 <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">headline / hook</label>
+                  <label className="block text-[11px] text-stone-500 mb-1">Monthly Retainer ($)</label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    value={editingClient.monthly_retainer}
+                    onChange={(e) => setEditingClient({ ...editingClient, monthly_retainer: Number(e.target.value) })}
+                    className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">Client Status</label>
+                  <select
+                    value={editingClient.status}
+                    onChange={(e) => setEditingClient({ ...editingClient, status: e.target.value as any })}
+                    className={`w-full rounded-full px-3.5 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                  >
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="ONBOARDING">ONBOARDING</option>
+                    <option value="PAUSED">PAUSED</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">Contact Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={editingClient.contact_email}
+                    onChange={(e) => setEditingClient({ ...editingClient, contact_email: e.target.value })}
+                    className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingClient(null)}
+                    className="rounded-full px-4 py-2 text-stone-400 hover:text-black dark:hover:text-white"
+                  >
+                    cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className={`rounded-full px-5 py-2 font-medium ${pillBlack}`}
+                  >
+                    save changes
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* MODAL 3: ADD CLIENT PROJECT */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {showAddProjectModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className={`w-full max-w-md rounded-[28px] border p-6 sm:p-7 shadow-2xl space-y-4 ${whiteCard}`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-lg font-editorial">Create Client Project</h3>
+                  <p className={`text-xs ${textMuted}`}>Define campaign deliverables, budget, and ROAS target.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddProjectModal(false)}
+                  className="rounded-full p-1 text-stone-400 hover:text-black dark:hover:text-white"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateProject} className="space-y-3.5 text-xs font-mono">
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">Select Client</label>
+                  <select
+                    required
+                    value={projectForm.client_id}
+                    onChange={(e) => setProjectForm({ ...projectForm, client_id: e.target.value })}
+                    className={`w-full rounded-full px-3.5 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                  >
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">Project Title</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Stop wasting 15 hours weekly on manual ERP workflows"
-                    value={newCreativeForm.headline}
-                    onChange={(e) => setNewCreativeForm({ ...newCreativeForm, headline: e.target.value })}
+                    placeholder="e.g. Q4 Performance Search & Social Sprint"
+                    value={projectForm.title}
+                    onChange={(e) => setProjectForm({ ...projectForm, title: e.target.value })}
                     className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-2.5">
                   <div>
-                    <label className="block text-[11px] text-stone-500 mb-1">format</label>
+                    <label className="block text-[11px] text-stone-500 mb-1">Category</label>
                     <select
-                      value={newCreativeForm.format}
-                      onChange={(e) => setNewCreativeForm({ ...newCreativeForm, format: e.target.value as any })}
+                      value={projectForm.category}
+                      onChange={(e) => setProjectForm({ ...projectForm, category: e.target.value as any })}
                       className={`w-full rounded-full px-3.5 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
                     >
-                      <option value="Video">Video Ad</option>
-                      <option value="Carousel">Carousel</option>
-                      <option value="Single Image">Single Image</option>
-                      <option value="Story">Story / Reel</option>
+                      <option value="Paid Search">Paid Search</option>
+                      <option value="Paid Social">Paid Social</option>
+                      <option value="SEO & Content">SEO & Content</option>
+                      <option value="Brand & Creative">Brand & Creative</option>
+                      <option value="Email & CRM">Email & CRM</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-[11px] text-stone-500 mb-1">call to action</label>
+                    <label className="block text-[11px] text-stone-500 mb-1">Project Budget ($)</label>
                     <input
-                      type="text"
+                      type="number"
                       required
-                      value={newCreativeForm.cta}
-                      onChange={(e) => setNewCreativeForm({ ...newCreativeForm, cta: e.target.value })}
+                      min={100}
+                      value={projectForm.budget}
+                      onChange={(e) => setProjectForm({ ...projectForm, budget: Number(e.target.value) })}
+                      className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">Target ROAS (x)</label>
+                    <input
+                      type="number"
+                      step={0.1}
+                      min={1}
+                      value={projectForm.target_roas}
+                      onChange={(e) => setProjectForm({ ...projectForm, target_roas: Number(e.target.value) })}
+                      className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">Target Deadline</label>
+                    <input
+                      type="date"
+                      required
+                      value={projectForm.deadline}
+                      onChange={(e) => setProjectForm({ ...projectForm, deadline: e.target.value })}
                       className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">narrative body copy</label>
-                  <textarea
-                    rows={3}
+                  <label className="block text-[11px] text-stone-500 mb-1">Key Deliverables</label>
+                  <input
+                    type="text"
+                    placeholder="Deliverables description..."
+                    value={projectForm.deliverables}
+                    onChange={(e) => setProjectForm({ ...projectForm, deliverables: e.target.value })}
+                    className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddProjectModal(false)}
+                    className="rounded-full px-4 py-2 text-stone-400 hover:text-black dark:hover:text-white"
+                  >
+                    cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className={`rounded-full px-5 py-2 font-medium ${pillBlack}`}
+                  >
+                    launch project ↗
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: ADD CLIENT ASSET */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {showAddAssetModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className={`w-full max-w-md rounded-[28px] border p-6 sm:p-7 shadow-2xl space-y-4 ${whiteCard}`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-lg font-editorial">Register Client Asset</h3>
+                  <p className={`text-xs ${textMuted}`}>Add creative hooks, video scripts, Figma decks, or copy docs.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddAssetModal(false)}
+                  className="rounded-full p-1 text-stone-400 hover:text-black dark:hover:text-white"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateAsset} className="space-y-3.5 text-xs font-mono">
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">Select Client</label>
+                  <select
                     required
-                    placeholder="Enter ad body text..."
-                    value={newCreativeForm.primaryText}
-                    onChange={(e) => setNewCreativeForm({ ...newCreativeForm, primaryText: e.target.value })}
+                    value={assetForm.client_id}
+                    onChange={(e) => setAssetForm({ ...assetForm, client_id: e.target.value })}
+                    className={`w-full rounded-full px-3.5 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                  >
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">Associate to Project (optional)</label>
+                  <select
+                    value={assetForm.project_id}
+                    onChange={(e) => setAssetForm({ ...assetForm, project_id: e.target.value })}
+                    className={`w-full rounded-full px-3.5 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                  >
+                    <option value="">-- General Client Brand Asset --</option>
+                    {projects
+                      .filter((p) => !assetForm.client_id || p.client_id === assetForm.client_id)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>{p.title}</option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">Asset Name / Title</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Q4 Black Friday Story Ad Creatives"
+                    value={assetForm.name}
+                    onChange={(e) => setAssetForm({ ...assetForm, name: e.target.value })}
+                    className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">Asset Type</label>
+                    <select
+                      value={assetForm.asset_type}
+                      onChange={(e) => setAssetForm({ ...assetForm, asset_type: e.target.value as any })}
+                      className={`w-full rounded-full px-3.5 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                    >
+                      <option value="Ad Creative">Ad Creative</option>
+                      <option value="Video Script">Video Script</option>
+                      <option value="Copywriting">Copywriting</option>
+                      <option value="Brand Asset">Brand Asset</option>
+                      <option value="Landing Page">Landing Page</option>
+                      <option value="Report">Report</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">File Format</label>
+                    <select
+                      value={assetForm.file_format}
+                      onChange={(e) => setAssetForm({ ...assetForm, file_format: e.target.value as any })}
+                      className={`w-full rounded-full px-3.5 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                    >
+                      <option value="Figma">Figma</option>
+                      <option value="Video / MP4">Video / MP4</option>
+                      <option value="Graphic / PNG">Graphic / PNG</option>
+                      <option value="PDF">PDF</option>
+                      <option value="Drive / Doc">Drive / Doc</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">Asset URL / Cloud Link (Figma, Drive, etc.)</label>
+                  <input
+                    type="url"
+                    required
+                    placeholder="https://figma.com/file/..."
+                    value={assetForm.asset_url}
+                    onChange={(e) => setAssetForm({ ...assetForm, asset_url: e.target.value })}
+                    className={`w-full rounded-full px-4 py-2.5 border outline-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">Creative Notes / Review Context</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Notes for client review..."
+                    value={assetForm.notes}
+                    onChange={(e) => setAssetForm({ ...assetForm, notes: e.target.value })}
                     className={`w-full rounded-2xl p-3 border outline-none resize-none ${dark ? "bg-[#0d1117] border-[#30363d]" : "bg-[#faf7f2] border-[#ded8ce]"}`}
                   />
                 </div>
@@ -1416,7 +1975,7 @@ export default function DigitalMarketingWorkspace({
                 <div className="pt-2 flex items-center justify-end gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowNewCreativeModal(false)}
+                    onClick={() => setShowAddAssetModal(false)}
                     className="rounded-full px-4 py-2 text-stone-400 hover:text-black dark:hover:text-white"
                   >
                     cancel
@@ -1425,7 +1984,7 @@ export default function DigitalMarketingWorkspace({
                     type="submit"
                     className={`rounded-full px-5 py-2 font-medium ${pillBlack}`}
                   >
-                    save creative ↗
+                    save asset ↗
                   </button>
                 </div>
               </form>
@@ -1435,10 +1994,10 @@ export default function DigitalMarketingWorkspace({
       </AnimatePresence>
 
       {/* ========================================================================= */}
-      {/* MODAL: GROWTH DEMO PREVIEW */}
+      {/* MODAL 5: INSPECT & APPROVE ASSET */}
       {/* ========================================================================= */}
       <AnimatePresence>
-        {showDemoVideoModal && (
+        {previewingAsset && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -1448,35 +2007,100 @@ export default function DigitalMarketingWorkspace({
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-lg font-editorial">ZootechX Growth Suite Demo</h3>
-                  <p className={`text-xs ${textMuted}`}>Multi-channel ad telemetry & real-time ROAS attribution.</p>
+                  <h3 className="font-bold text-lg font-editorial">{previewingAsset.name}</h3>
+                  <p className={`text-xs ${textMuted}`}>{previewingAsset.client_name} • {previewingAsset.file_format}</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowDemoVideoModal(false)}
+                  onClick={() => setPreviewingAsset(null)}
                   className="rounded-full p-1 text-stone-400 hover:text-black dark:hover:text-white"
                 >
                   <X size={16} />
                 </button>
               </div>
 
-              <div className={`rounded-2xl border p-8 text-center space-y-3 ${sandCard}`}>
-                <div className="h-12 w-12 rounded-full bg-black text-white dark:bg-white dark:text-black flex items-center justify-center mx-auto shadow-md">
-                  <Play size={20} className="ml-0.5" />
+              <div className={`p-4 rounded-2xl border ${sandCard} space-y-2 text-xs font-mono`}>
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Asset Type:</span>
+                  <span className="font-semibold text-stone-800 dark:text-stone-200">{previewingAsset.asset_type}</span>
                 </div>
-                <div className="font-semibold text-sm">Interactive Growth Walkthrough</div>
-                <p className="text-xs text-stone-500 max-w-xs mx-auto">
-                  Experience live Google & Meta ad telemetry, AI audience enrichment, and 1-click lead synchronization into your CRM sales pipeline.
-                </p>
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Version:</span>
+                  <span className="font-semibold text-stone-800 dark:text-stone-200">{previewingAsset.version}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Linked Project:</span>
+                  <span className="font-semibold text-stone-800 dark:text-stone-200">{previewingAsset.project_title || "General Brand Asset"}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1 border-t border-inherit">
+                  <span className="text-stone-500">Current Status:</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                    previewingAsset.status === "APPROVED"
+                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+                      : previewingAsset.status === "IN_REVIEW"
+                      ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                      : pillSand
+                  }`}>
+                    {previewingAsset.status}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex justify-end pt-2">
+              {previewingAsset.notes && (
+                <div className="space-y-1">
+                  <div className="text-[11px] font-mono text-stone-500">Review Notes:</div>
+                  <div className={`p-3 rounded-xl border text-xs leading-relaxed ${sandCard}`}>
+                    {previewingAsset.notes}
+                  </div>
+                </div>
+              )}
+
+              {/* Status Action Buttons */}
+              <div className="space-y-2 pt-1">
+                <div className="text-[11px] font-mono text-stone-500">Update Review Decision:</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateAssetStatus(previewingAsset.id, "APPROVED")}
+                    className="flex-1 rounded-full py-2 text-xs font-mono font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1"
+                  >
+                    <Check size={13} />
+                    <span>Approve Asset</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateAssetStatus(previewingAsset.id, "NEEDS_REVISION")}
+                    className="flex-1 rounded-full py-2 text-xs font-mono font-medium bg-amber-600 text-white hover:bg-amber-700 transition"
+                  >
+                    Request Revision
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateAssetStatus(previewingAsset.id, "IN_REVIEW")}
+                    className={`flex-1 rounded-full py-2 text-xs font-mono font-medium border ${pillOutline}`}
+                  >
+                    In Review
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-inherit">
+                <a
+                  href={previewingAsset.asset_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 dark:text-blue-400 text-xs font-mono hover:underline flex items-center gap-1"
+                >
+                  <ExternalLink size={12} />
+                  <span>Open in {previewingAsset.file_format} ↗</span>
+                </a>
+
                 <button
                   type="button"
-                  onClick={() => setShowDemoVideoModal(false)}
+                  onClick={() => setPreviewingAsset(null)}
                   className={`rounded-full px-5 py-2 text-xs font-medium ${pillBlack}`}
                 >
-                  close demo
+                  close
                 </button>
               </div>
             </motion.div>

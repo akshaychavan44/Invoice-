@@ -17,7 +17,7 @@ import {
   Phone, MessageCircle, Mail, Calendar, MapPin, TrendingUp, TrendingDown, Clock,
   Check, AlertCircle, ArrowLeft, Save, Wand2, Sparkles, Bot, Filter, KeyRound,
   Download, Edit3, Trash2, MoreHorizontal, ChevronRight, Briefcase, Home, Store, Factory, LandPlot,
-  LogOut, Crown, CheckCircle2, Megaphone
+  LogOut, Crown, CheckCircle2
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -73,8 +73,39 @@ const toClient = (client: ApiClient): Client => ({
 });
 type ApiQuotation = { quotation_number: string; client_name: string; amount: string | number; valid_until: string; status: string };
 const toQuotation = (quotation: ApiQuotation): Quotation => ({ id: quotation.quotation_number, clientName: quotation.client_name, amount: Number(quotation.amount), validUntil: quotation.valid_until.slice(0, 10), status: quotation.status });
-type ApiNotification = { id:string; title:string; message:string; is_read:boolean; created_at:string };
-const toNotification = (notification: ApiNotification) => ({ id:notification.id, text:`${notification.title}: ${notification.message}`, time:new Date(notification.created_at).toLocaleString(), unread:!notification.is_read });
+const formatNotificationTime = (isoString?: string) => {
+  if (!isoString) return "Just now";
+  try {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    if (diffMs <= 0 || isNaN(diffMs)) return "Just now";
+    const diffSecs = Math.floor(diffMs / 1000);
+    if (diffSecs < 60) return "Just now";
+    const diffMins = Math.floor(diffSecs / 60);
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  } catch {
+    return "Recently";
+  }
+};
+
+type ApiNotification = { id: string; title: string; message: string; is_read: boolean; created_at: string };
+type AppNotification = { id: string; title: string; message: string; text: string; time: string; unread: boolean; createdAt: string };
+const toNotification = (notification: ApiNotification): AppNotification => ({
+  id: notification.id,
+  title: notification.title,
+  message: notification.message,
+  text: `${notification.title}: ${notification.message}`,
+  time: formatNotificationTime(notification.created_at),
+  unread: !notification.is_read,
+  createdAt: notification.created_at,
+});
 type ApiInvoice = { id: string; invoice_number: string; client_id: string; client_name: string; total: string | number; paid_amount: string | number; due_date: string; created_at: string; created_by_name?: string | null };
 const toInvoice = (invoice: ApiInvoice): Invoice => ({ id: invoice.id, number: invoice.invoice_number, clientId: invoice.client_id, clientName: invoice.client_name, date: invoice.created_at.slice(0, 10), dueDate: invoice.due_date.slice(0, 10), placeOfSupply: "27-Maharashtra", items: [], subtotal: Number(invoice.total), total: Number(invoice.total), gstTotal: 0, cgst: 0, sgst: 0, igst: 0, status: Number(invoice.paid_amount) >= Number(invoice.total) ? "Paid" : "Sent", amountPaid: Number(invoice.paid_amount), createdByName: invoice.created_by_name });
 type FinanceExpense = { id: string; title: string; category: string; amount: string | number; expense_date: string | null; payment_method: string | null };
@@ -135,6 +166,7 @@ export default function App() {
   const addLeadDateRef = useRef<HTMLInputElement>(null);
   const quoteValidUntilRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const notifContainerRef = useRef<HTMLDivElement>(null);
 
   // NEW INVOICE FORM STATE
   const [newInvoice, setNewInvoice] = useState<Partial<Invoice> & { placeOfSupply: string }>({
@@ -164,7 +196,11 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  const [notifications, setNotifications] = useState([{ id:"1", text:"Follow-up overdue: Sneha Gupta", time:"10 min ago", unread:true }, { id:"2", text:"New lead: Ananya Desai converted", time:"1 hr ago", unread:true }, { id:"3", text:"Invoice INV-2026-001 due in 3 days", time:"2 hr ago", unread:false }]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([
+    { id:"1", title:"Follow-up overdue", message:"Sneha Gupta", text:"Follow-up overdue: Sneha Gupta", time:"10m ago", unread:true, createdAt:new Date().toISOString() },
+    { id:"2", title:"New lead converted", message:"Ananya Desai converted", text:"New lead: Ananya Desai converted", time:"1h ago", unread:true, createdAt:new Date(Date.now() - 3600000).toISOString() },
+    { id:"3", title:"Invoice due", message:"INV-2026-001 due in 3 days", text:"Invoice INV-2026-001 due in 3 days", time:"2h ago", unread:false, createdAt:new Date(Date.now() - 7200000).toISOString() }
+  ]);
 
   // Load theme only. CRM data is always loaded from the authenticated backend.
   useEffect(()=>{
@@ -225,6 +261,36 @@ export default function App() {
     };
     loadCrmData();
   }, [isLoggedIn]);
+
+  // Real-time notification poller (polls every 6 seconds for live CRM events)
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const pollNotifications = async () => {
+      try {
+        const response = await apiFetch("/api/notifications");
+        if (response.ok) {
+          const resJson = await response.json();
+          if (Array.isArray(resJson.data)) {
+            setNotifications(resJson.data.map(toNotification));
+          }
+        }
+      } catch {}
+    };
+    const pollInterval = setInterval(pollNotifications, 6000);
+    return () => clearInterval(pollInterval);
+  }, [isLoggedIn]);
+
+  // Dismiss notification popover when clicking outside
+  useEffect(() => {
+    if (!notifOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (notifContainerRef.current && !notifContainerRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [notifOpen]);
 
   useEffect(()=>{ 
     localStorage.setItem("zootechx_theme", isDark ? "dark" : "light");
@@ -304,9 +370,50 @@ export default function App() {
 
   const searchResultCount = searchMatches.leads.length + searchMatches.followUps.length + searchMatches.clients.length + searchMatches.invoices.length;
   const bellNotifications = notificationTab === "unread" ? notifications.filter(notification => notification.unread) : notifications;
-  const markNotificationRead = async (id:string) => { const response = await apiFetch(`/api/notifications/${id}/read`, { method:"PATCH" }); if (response.ok) setNotifications(current => current.map(notification => notification.id === id ? { ...notification, unread:false } : notification)); };
-  const markAllNotificationsRead = async () => { const response = await apiFetch("/api/notifications/read-all", { method:"POST" }); if (response.ok) setNotifications(current => current.map(notification => ({ ...notification, unread:false }))); };
-  const clearReadNotifications = async () => { const response = await apiFetch("/api/notifications/clear-read", { method:"POST" }); if (response.ok) setNotifications(current => current.filter(notification => notification.unread)); };
+  const markNotificationRead = async (id: string) => {
+    setNotifications(current => current.map(notification => notification.id === id ? { ...notification, unread: false } : notification));
+    await apiFetch(`/api/notifications/${id}/read`, { method: "PATCH" }).catch(() => {});
+  };
+  const markAllNotificationsRead = async () => {
+    setNotifications(current => current.map(notification => ({ ...notification, unread: false })));
+    await apiFetch("/api/notifications/read-all", { method: "POST" }).catch(() => {});
+  };
+  const clearReadNotifications = async () => {
+    setNotifications(current => current.filter(notification => notification.unread));
+    await apiFetch("/api/notifications/clear-read", { method: "POST" }).catch(() => {});
+  };
+  const pushRealtimeNotification = (title: string, message: string) => {
+    const item: AppNotification = {
+      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title,
+      message,
+      text: `${title}: ${message}`,
+      time: "Just now",
+      unread: true,
+      createdAt: new Date().toISOString(),
+    };
+    setNotifications(prev => [item, ...prev]);
+  };
+  const handleNotificationClick = (item: AppNotification) => {
+    if (item.unread) {
+      void markNotificationRead(item.id);
+    }
+    const txt = `${item.title} ${item.message}`.toLowerCase();
+    if (txt.includes("invoice") || txt.includes("inv-") || txt.includes("payment")) {
+      setCurrentPage("invoices");
+    } else if (txt.includes("follow-up") || txt.includes("followup")) {
+      setCurrentPage("followups");
+    } else if (txt.includes("lead")) {
+      setCurrentPage("leads");
+    } else if (txt.includes("client")) {
+      setCurrentPage("clients");
+    } else if (txt.includes("quotation") || txt.includes("quote")) {
+      setCurrentPage("quotations");
+    } else if (txt.includes("project") || txt.includes("developer")) {
+      setCurrentPage("developer");
+    }
+    setNotifOpen(false);
+  };
 
   // Converted records belong in Clients, so all lead counters use active leads.
   const activeLeads = useMemo(() => leads.filter(lead => lead.status !== "Converted"), [leads]);
@@ -360,9 +467,10 @@ export default function App() {
         const client = toClient(data.client as ApiClient);
         setClients(current => current.some(item => item.id === client.id) ? current : [client, ...current]);
       }
+      pushRealtimeNotification("Lead Converted", `${lead.name} was successfully converted to an active client`);
       setSelectedLead(null);
     } catch (error) {
-      setNotifications(current => [{ id:Date.now().toString(), text:error instanceof Error ? error.message : "Unable to convert lead", time:"Just now", unread:true }, ...current]);
+      setNotifications(current => [{ id:Date.now().toString(), title:"Action Failed", message:error instanceof Error ? error.message : "Unable to convert lead", text:error instanceof Error ? error.message : "Unable to convert lead", time:"Just now", unread:true, createdAt:new Date().toISOString() }, ...current]);
     }
   };
 
@@ -390,7 +498,7 @@ export default function App() {
       if (!response.ok || !data.data) throw new Error(data.message || "Unable to update lead status");
       setLeads(current => current.map(item => item.id === lead.id ? toLead(data.data as ApiLead) : item));
     } catch (error) {
-      setNotifications(current => [{ id:Date.now().toString(), text:error instanceof Error ? error.message : "Unable to update lead status", time:"Just now", unread:true }, ...current]);
+      setNotifications(current => [{ id:Date.now().toString(), title:"Status Update Failed", message:error instanceof Error ? error.message : "Unable to update lead status", text:error instanceof Error ? error.message : "Unable to update lead status", time:"Just now", unread:true, createdAt:new Date().toISOString() }, ...current]);
     }
   };
 
@@ -406,10 +514,11 @@ export default function App() {
       if (!response.ok || !data.data) throw new Error(data.message || "Unable to save quotation");
       const quotation = toQuotation(data.data as ApiQuotation);
       setQuotations(current => [quotation, ...current]);
+      pushRealtimeNotification("Quotation Generated", `Quotation #${quotation.id} for ${quotation.clientName} (₹${quotation.amount.toLocaleString()})`);
       setShowCreateQuote(false);
       setQuoteForm({ status:"Draft" });
     } catch (error) {
-      setNotifications(current => [{ id:Date.now().toString(), text:error instanceof Error ? error.message : "Unable to save quotation", time:"Just now", unread:true }, ...current]);
+      setNotifications(current => [{ id:Date.now().toString(), title:"Quote Failed", message:error instanceof Error ? error.message : "Unable to save quotation", text:error instanceof Error ? error.message : "Unable to save quotation", time:"Just now", unread:true, createdAt:new Date().toISOString() }, ...current]);
     }
   };
 
@@ -419,8 +528,9 @@ export default function App() {
       const data = await response.json();
       if (!response.ok || !data.data) throw new Error(data.message || "Unable to complete follow-up");
       setFollowUps(current => current.map(item => item.id === followUp.id ? toFollowUp(data.data as ApiFollowUp) : item));
+      pushRealtimeNotification("Follow-up Completed", `Follow-up with ${followUp.leadName} completed`);
     } catch (error) {
-      setNotifications(current => [{ id:Date.now().toString(), text:error instanceof Error ? error.message : "Unable to complete follow-up", time:"Just now", unread:true }, ...current]);
+      setNotifications(current => [{ id:Date.now().toString(), title:"Action Failed", message:error instanceof Error ? error.message : "Unable to complete follow-up", text:error instanceof Error ? error.message : "Unable to complete follow-up", time:"Just now", unread:true, createdAt:new Date().toISOString() }, ...current]);
     }
   };
 
@@ -430,7 +540,7 @@ export default function App() {
       if (!response.ok) { const data = await response.json(); throw new Error(data.message || "Unable to delete follow-up"); }
       setFollowUps(current => current.filter(item => item.id !== followUp.id));
     } catch (error) {
-      setNotifications(current => [{ id:Date.now().toString(), text:error instanceof Error ? error.message : "Unable to delete follow-up", time:"Just now", unread:true }, ...current]);
+      setNotifications(current => [{ id:Date.now().toString(), title:"Delete Failed", message:error instanceof Error ? error.message : "Unable to delete follow-up", text:error instanceof Error ? error.message : "Unable to delete follow-up", time:"Just now", unread:true, createdAt:new Date().toISOString() }, ...current]);
     }
   };
 
@@ -462,8 +572,9 @@ export default function App() {
       if (!response.ok) throw new Error(data.message || "Unable to save lead");
       savedLead = toLead(data.data as ApiLead);
       setLeads(current => [savedLead, ...current]);
+      pushRealtimeNotification("New Lead Created", `${savedLead.name}${savedLead.company ? ` (${savedLead.company})` : ""} was added to CRM`);
     } catch (error) {
-      setNotifications(current => [{ id:Date.now().toString(), text:error instanceof Error ? error.message : "Unable to save lead", time:"Just now", unread:true }, ...current]);
+      setNotifications(current => [{ id:Date.now().toString(), title:"Lead Creation Failed", message:error instanceof Error ? error.message : "Unable to save lead", text:error instanceof Error ? error.message : "Unable to save lead", time:"Just now", unread:true, createdAt:new Date().toISOString() }, ...current]);
       return;
     }
     // Auto-create the selected follow-up only after the lead has been persisted.
@@ -481,7 +592,7 @@ export default function App() {
         if (!response.ok) throw new Error(data.message || "Unable to create follow-up");
         const savedFollowUp = toFollowUp(data.data as ApiFollowUp);
         setFollowUps(current => [savedFollowUp, ...current]);
-      } catch (error) { setNotifications(current => [{ id:Date.now().toString(), text:error instanceof Error ? error.message : "Lead was saved, but its follow-up could not be created", time:"Just now", unread:true }, ...current]); }
+      } catch (error) { setNotifications(current => [{ id:Date.now().toString(), title:"Follow-up Warning", message:error instanceof Error ? error.message : "Lead was saved, but its follow-up could not be created", text:error instanceof Error ? error.message : "Lead was saved, but its follow-up could not be created", time:"Just now", unread:true, createdAt:new Date().toISOString() }, ...current]); }
     }
     setShowAddLead(false);
     setLeadFollowUpTime("10:00 AM");
@@ -489,7 +600,7 @@ export default function App() {
   };
 
   const handleScheduleFollowUp = async () => {
-    if(!followUpForm.leadName) { setNotifications([{ id: Date.now().toString(), text: "Select a lead before scheduling a follow-up.", time: "Just now", unread: true }, ...notifications]); return; }
+    if(!followUpForm.leadName) { setNotifications([{ id: Date.now().toString(), title:"Missing Lead", message:"Select a lead before scheduling a follow-up.", text: "Select a lead before scheduling a follow-up.", time: "Just now", unread: true, createdAt:new Date().toISOString() }, ...notifications]); return; }
     const fu: FollowUp = {
       id:`F${String(followUps.length+1).padStart(3,"0")}`, leadId:followUpForm.leadId||"", leadName:followUpForm.leadName!,
       company:followUpForm.company||"", property:followUpForm.property||"", type:(followUpForm.type as FollowUpType)||"Phone Call",
@@ -502,8 +613,9 @@ export default function App() {
       const data = await response.json(); if (!response.ok) throw new Error(data.message || "Unable to schedule follow-up");
       const savedFollowUp = toFollowUp(data.data as ApiFollowUp);
       setFollowUps(current => [savedFollowUp, ...current]);
+      pushRealtimeNotification("Follow-up Scheduled", `Follow-up with ${fu.leadName} scheduled on ${fu.date}`);
       setShowFollowUpModal(false); setFollowUpForm({ type:"Phone Call", priority:"Medium", assignedTo:"Aarav" });
-    } catch (error) { setNotifications([{ id: Date.now().toString(), text: error instanceof Error ? error.message : "Unable to schedule follow-up", time: "Just now", unread: true }, ...notifications]); }
+    } catch (error) { setNotifications([{ id: Date.now().toString(), title:"Schedule Failed", message:error instanceof Error ? error.message : "Unable to schedule follow-up", text: error instanceof Error ? error.message : "Unable to schedule follow-up", time: "Just now", unread: true, createdAt:new Date().toISOString() }, ...notifications]); }
   };
 
   const handleCreateClient = async () => {
@@ -512,11 +624,13 @@ export default function App() {
       const response = await apiFetch("/api/clients", { method: "POST", body: JSON.stringify({ name: clientForm.name || clientForm.businessName, company: clientForm.businessName, email: clientForm.email || undefined, phone: clientForm.phone, gstNumber: clientForm.gstin || undefined }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Unable to save client");
-      setClients([toClient(data.data), ...clients]);
+      const newClient = toClient(data.data);
+      setClients([newClient, ...clients]);
+      pushRealtimeNotification("Client Onboarded", `${newClient.name || newClient.businessName} was added to CRM`);
       setShowCreateClient(false);
       setClientForm({ state: "27-Maharashtra" });
       setToastMessage("Client created successfully.");
-    } catch (error) { setNotifications(current => [{ id:Date.now().toString(), text:error instanceof Error ? error.message : "Unable to save client", time:"Just now", unread:true }, ...current]); }
+    } catch (error) { setNotifications(current => [{ id:Date.now().toString(), title:"Client Failed", message:error instanceof Error ? error.message : "Unable to save client", text:error instanceof Error ? error.message : "Unable to save client", time:"Just now", unread:true, createdAt:new Date().toISOString() }, ...current]); }
   };
 
   const calculateInvoiceTotals = (items: InvoiceItem[], place: string) => {
@@ -550,15 +664,17 @@ export default function App() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Unable to save invoice");
       setInvoices([{ ...inv, id: data.data.id, createdByName: data.data.created_by_name ?? null }, ...invoices]);
+      pushRealtimeNotification("Invoice Created", `Invoice #${inv.number} for ${inv.clientName} (₹${inv.total.toLocaleString()})`);
       setToastMessage(asDraft ? "Invoice draft saved." : "Invoice created successfully.");
     } catch (error) {
       if (error instanceof Error && error.message === "Choose a client before saving an invoice") {
-        setNotifications([{ id: Date.now().toString(), text: error.message, time: "Just now", unread: true }, ...notifications]);
+        setNotifications([{ id: Date.now().toString(), title:"Missing Client", message:error.message, text: error.message, time: "Just now", unread: true, createdAt:new Date().toISOString() }, ...notifications]);
         return;
       }
       setInvoices([inv, ...invoices]);
+      pushRealtimeNotification("Invoice Saved", `Invoice #${inv.number} for ${inv.clientName} saved`);
       setToastMessage(asDraft ? "Invoice draft saved locally." : "Invoice saved locally.");
-      setNotifications([{ id: Date.now().toString(), text: "Invoice saved locally. It will sync when Neon is available.", time: "Just now", unread: true }, ...notifications]);
+      setNotifications([{ id: Date.now().toString(), title:"Saved Locally", message:"Invoice saved locally. It will sync when Neon is available.", text: "Invoice saved locally. It will sync when Neon is available.", time: "Just now", unread: true, createdAt:new Date().toISOString() }, ...notifications]);
     }
     setCurrentPage("invoices");
     setNewInvoice({
@@ -665,7 +781,6 @@ if (userRole === "DIGITAL_MARKETING") {
             { id:"quotations", label:"Quotations", icon:FileQuestion },
             { id:"clients", label:"Clients", icon:Users },
             { id:"developers", label:"Developers & Projects", icon:Briefcase },
-            { id:"marketing", label:"Digital Marketing", icon:Megaphone },
             { id:"payments", label:"Payments", icon:CreditCard },
             { id:"vault", label:"Credentials Vault", icon:KeyRound },
           ].map(item=>{
@@ -754,19 +869,24 @@ if (userRole === "DIGITAL_MARKETING") {
               )}
             </div>
 
-            {/* Nocturne & Ivory Theme Toggle Button */}
+            {/* Day & Night Theme Toggle Button */}
             <button
               onClick={toggleTheme}
-              title={isDark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
-              aria-label={isDark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
-              className={`flex items-center gap-2.5 px-3 py-1.5 rounded-full border transition-all ${
+              title={isDark ? "Switch to Day (Light Mode)" : "Switch to Night (Dark Mode)"}
+              aria-label={isDark ? "Switch to Day (Light Mode)" : "Switch to Night (Dark Mode)"}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${
                 isDark 
                   ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9] hover:border-[#cca45f]/40 shadow-sm" 
                   : "bg-white border-[#eee6da] text-[#1c1917] hover:border-[#a07432]/40 shadow-sm"
               }`}
             >
+              {isDark ? (
+                <Moon size={13} className="text-[#cca45f]" />
+              ) : (
+                <Sun size={13} className="text-amber-500" />
+              )}
               <span className="text-[10px] font-bold tracking-widest uppercase font-mono">
-                {isDark ? "NOCTURNE" : "IVORY"}
+                {isDark ? "NIGHT" : "DAY"}
               </span>
               <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${
                 isDark ? "bg-[#090d16] justify-end" : "bg-[#ede5d8] justify-start"
@@ -777,24 +897,87 @@ if (userRole === "DIGITAL_MARKETING") {
               </div>
             </button>
 
-            <div className="relative">
-              <button onClick={()=> { setNotifOpen(!notifOpen); setNotificationTab("unread"); }} className={`h-10 w-10 rounded-xl border flex items-center justify-center relative ${bgCard} hover:scale-105 transition`}>
+            <div ref={notifContainerRef} className="relative">
+              <button
+                onClick={() => { setNotifOpen(!notifOpen); setNotificationTab("unread"); }}
+                title="Notifications"
+                aria-label="View notifications"
+                className={`h-10 w-10 rounded-xl border flex items-center justify-center relative ${bgCard} hover:scale-105 transition`}
+              >
                 <Bell size={17}/>
-                {notifications.filter(n=> n.unread).length>0 && <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">{notifications.filter(n=> n.unread).length}</span>}
+                {notifications.filter(n => n.unread).length > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold animate-pulse">
+                    {notifications.filter(n => n.unread).length}
+                  </span>
+                )}
               </button>
               {notifOpen && (
                 <div className={`absolute right-0 top-12 w-[360px] rounded-3xl border shadow-2xl z-40 ${bgCard} overflow-hidden`}>
-                  <div className={`p-4 border-b ${borderC}`}><div className="flex items-center justify-between"><div className="font-bold text-[14px]">Notifications</div>{notificationTab === "unread" && <button onClick={()=> void markAllNotificationsRead()} className="text-[11px] font-semibold text-indigo-400 hover:underline">Mark all as read</button>}</div><div className="mt-3 flex gap-4 text-[12px] font-semibold"><button onClick={()=> setNotificationTab("unread")} className={notificationTab === "unread" ? "text-indigo-400" : textMuted}>Unread</button><button onClick={()=> setNotificationTab("all")} className={notificationTab === "all" ? "text-indigo-400" : textMuted}>All</button></div></div>
+                  <div className={`p-4 border-b ${borderC}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="font-bold text-[14px]">Notifications</div>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          LIVE
+                        </span>
+                      </div>
+                      {notificationTab === "unread" && (
+                        <button onClick={() => void markAllNotificationsRead()} className="text-[11px] font-semibold text-indigo-400 hover:underline">
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-3 flex gap-4 text-[12px] font-semibold">
+                      <button onClick={() => setNotificationTab("unread")} className={notificationTab === "unread" ? "text-indigo-400 font-bold" : textMuted}>
+                        Unread ({notifications.filter(n => n.unread).length})
+                      </button>
+                      <button onClick={() => setNotificationTab("all")} className={notificationTab === "all" ? "text-indigo-400 font-bold" : textMuted}>
+                        All ({notifications.length})
+                      </button>
+                    </div>
+                  </div>
                   <div className="max-h-[360px] overflow-auto">
-                    {bellNotifications.map(n=> (
-                      <div key={n.id} className={`p-3.5 flex gap-3 border-b last:border-0 ${borderC} ${n.unread ? (isDark?"bg-indigo-950/20":"bg-white") : (isDark?"bg-[#11111b]":"bg-slate-50")}`}>
-                        <div className={`h-2 w-2 mt-2 rounded-full ${n.unread?"bg-indigo-500 animate-pulse":"bg-transparent"}`} />
-                        <div className="flex-1"><div className="text-[13px] font-medium">{n.text}</div><div className={`text-[11px] ${textMuted} mt-1`}>{n.time}</div>{n.unread && <button onClick={()=> void markNotificationRead(n.id)} className="mt-1.5 text-[11px] text-indigo-400 hover:underline">Mark as read</button>}</div>
+                    {bellNotifications.map(n => (
+                      <div
+                        key={n.id}
+                        onClick={() => handleNotificationClick(n)}
+                        className={`p-3.5 flex gap-3 border-b last:border-0 cursor-pointer transition hover:bg-indigo-500/5 ${borderC} ${
+                          n.unread ? (isDark ? "bg-indigo-950/20" : "bg-white") : (isDark ? "bg-[#11111b]" : "bg-slate-50")
+                        }`}
+                      >
+                        <div className={`h-2 w-2 mt-2 rounded-full shrink-0 ${n.unread ? "bg-indigo-500 animate-pulse" : "bg-transparent"}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-medium leading-snug">{n.text}</div>
+                          <div className={`text-[11px] ${textMuted} mt-1 flex items-center justify-between`}>
+                            <span>{n.time}</span>
+                            {n.unread && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void markNotificationRead(n.id);
+                                }}
+                                className="text-[11px] text-indigo-400 hover:underline"
+                              >
+                                Mark as read
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     ))}
-                    {bellNotifications.length === 0 && <div className={`p-8 text-center text-[12px] ${textMuted}`}>{notificationTab === "unread" ? "You’re all caught up 🎉" : "No notifications"}</div>}
+                    {bellNotifications.length === 0 && (
+                      <div className={`p-8 text-center text-[12px] ${textMuted}`}>
+                        {notificationTab === "unread" ? "You’re all caught up 🎉" : "No notifications"}
+                      </div>
+                    )}
                   </div>
-                  {notificationTab === "all" && <div className={`border-t p-3 ${borderC}`}><button onClick={()=> void clearReadNotifications()} className={`w-full text-center text-[11px] font-semibold ${textMuted} hover:text-red-400`}>Clear all read</button></div>}
+                  {notificationTab === "all" && (
+                    <div className={`border-t p-3 ${borderC}`}>
+                      <button onClick={() => void clearReadNotifications()} className={`w-full text-center text-[11px] font-semibold ${textMuted} hover:text-red-400 transition`}>
+                        Clear all read
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1494,18 +1677,7 @@ if (userRole === "DIGITAL_MARKETING") {
             </ClientsPage>
           )}
 
-          {currentPage==="developers" && <DeveloperWorkspace admin dark={isDark} />}
-
-          {currentPage === "marketing" && (
-            <div className="max-w-[1600px] mx-auto w-full -m-4 lg:-m-6">
-              <DigitalMarketingWorkspace
-                admin
-                dark={isDark}
-                onBack={() => setCurrentPage("dashboard")}
-                onToggleTheme={toggleTheme}
-              />
-            </div>
-          )}
+          {currentPage==="developers" && <DeveloperWorkspace admin embedded dark={isDark} />}
 
           {currentPage === "payments" && <PaymentsPage><PaymentsWorkspace dark={isDark} role={userRole}/></PaymentsPage>}
 

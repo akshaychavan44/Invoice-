@@ -41,18 +41,31 @@ async function withDbTimeout<T>(promise: Promise<T>, ms = 1200): Promise<T> {
 }
 
 import {
+  addMarketingClient,
+  addMarketingClientAsset,
+  addMarketingClientProject,
   createMarketingCampaign,
   createMarketingCreative,
   deleteMarketingCampaign,
+  deleteMarketingClient,
+  deleteMarketingClientAsset,
+  deleteMarketingClientProject,
   deleteMarketingCreative,
+  getMarketingClientsOverview,
   getMarketingOverview,
   getUnsyncedMarketingLeads,
   listMarketingCampaigns,
+  listMarketingClientAssets,
+  listMarketingClientProjects,
+  listMarketingClients,
   listMarketingCreatives,
   listMarketingLeads,
   markMarketingLeadSynced,
   toggleMarketingCampaignStatus,
   updateMarketingCampaign,
+  updateMarketingClient,
+  updateMarketingClientAsset,
+  updateMarketingClientProject,
 } from "./db/marketingFallback";
 import { findDemoUser, isDemoPassword } from "./demoUsers";
 type UserRow = { id: string; name: string; email: string; role: "SUPER_ADMIN" | "SUB_ADMIN" | "SALES" | "DEVELOPER" | "DIGITAL_MARKETING"; password_hash: string; must_change_password?: boolean; is_active?: boolean };
@@ -95,6 +108,14 @@ const campaignInput = z.object({
   startDate: z.string().date().optional(),
   endDate: z.string().date().optional(),
 });
+const campaignUpdateInput = z.object({
+  name: z.string().min(2).max(160).optional(),
+  budget: z.number().positive().optional(),
+  status: z.enum(["ACTIVE", "PAUSED", "COMPLETED"]).optional(),
+  targetAudience: z.string().max(500).optional(),
+  channel: z.string().max(60).optional(),
+  platform: z.string().max(60).optional(),
+}).refine(data => Object.keys(data).length > 0, { message: "At least one field is required for update" });
 const creativeInput = z.object({
   campaignId: z.string().optional(),
   title: z.string().min(2).max(160),
@@ -190,46 +211,169 @@ app.get("/api/auth/me", requireAuth, async (request: AuthRequest, response) => {
     response.json({ user: findDemoUser(request.user!.id) ?? null, offline: true });
   }
 });
-app.get("/api/notifications", requireAuth, async (request: AuthRequest, response) => {
-  try {
-    const rows = await withDbTimeout(sql`SELECT id, user_id, title, message, is_read, created_at FROM notifications WHERE user_id = ${request.user!.id} AND hidden_from_bell = false AND NOT (is_read = true AND created_at < now() - interval '7 days') ORDER BY created_at DESC`, 800);
-    response.json({ data: rows });
-  } catch {
-    response.json({ data: [] });
+type MemoryNotification = {
+  id: string;
+  user_id?: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  hidden_from_bell?: boolean;
+};
+
+const memoryNotifications: MemoryNotification[] = [];
+
+export function recordNotification(title: string, message: string, userId?: string) {
+  const notif: MemoryNotification = {
+    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    user_id: userId,
+    title,
+    message,
+    is_read: false,
+    created_at: new Date().toISOString(),
+    hidden_from_bell: false,
+  };
+  memoryNotifications.unshift(notif);
+  if (memoryNotifications.length > 50) memoryNotifications.pop();
+
+  if (userId) {
+    withDbTimeout(sql`INSERT INTO notifications (user_id, title, message, is_read, created_at) VALUES (${userId}, ${title}, ${message}, false, now())`, 800).catch(() => {});
   }
+}
+
+app.get("/api/notifications", requireAuth, async (request: AuthRequest, response) => {
+  let dbRows: any[] = [];
+  try {
+    dbRows = await withDbTimeout(sql`SELECT id, user_id, title, message, is_read, created_at FROM notifications WHERE (user_id = ${request.user!.id} OR user_id IS NULL) AND hidden_from_bell = false AND NOT (is_read = true AND created_at < now() - interval '7 days') ORDER BY created_at DESC LIMIT 30`, 800);
+  } catch {
+    dbRows = [];
+  }
+
+  const combined: MemoryNotification[] = [...dbRows];
+  const seenIds = new Set(dbRows.map((r: any) => String(r.id)));
+
+  for (const m of memoryNotifications) {
+    if (!m.hidden_from_bell && (!m.user_id || m.user_id === request.user!.id) && !seenIds.has(m.id)) {
+      combined.push(m);
+      seenIds.add(m.id);
+    }
+  }
+
+  // Synthesize live real-time notifications from CRM entities if list is small
+  if (combined.length < 3) {
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const followups = await withDbTimeout(sql`SELECT id, lead_name, company, followup_date, status FROM followups WHERE status != 'Completed' ORDER BY followup_date ASC LIMIT 3`, 600)
+        .catch(async () => (await listFallbackFollowups()).filter(f => f.status !== "Completed").slice(0, 3));
+
+      for (const f of followups) {
+        const isOverdue = f.followup_date < todayStr;
+        const title = isOverdue ? "Follow-up Overdue" : "Follow-up Scheduled";
+        const msg = `${f.lead_name}${f.company ? ` (${f.company})` : ""} is ${isOverdue ? "overdue since" : "due on"} ${f.followup_date}`;
+        const autoId = `auto-f-${f.id}`;
+        const fDate = new Date(f.followup_date);
+        const autoCreated = !isNaN(fDate.getTime()) ? fDate.toISOString() : new Date(Date.now() - 3600000).toISOString();
+        if (!seenIds.has(autoId)) {
+          combined.push({
+            id: autoId,
+            user_id: request.user!.id,
+            title,
+            message: msg,
+            is_read: false,
+            created_at: autoCreated,
+          });
+          seenIds.add(autoId);
+        }
+      }
+
+      const invoices = await withDbTimeout(sql`SELECT id, invoice_number, client_name, total, paid_amount, due_date, created_at FROM invoices ORDER BY created_at DESC LIMIT 3`, 600)
+        .catch(async () => (await listFallbackInvoices()).slice(0, 3));
+
+      for (const inv of invoices) {
+        const isUnpaid = Number(inv.paid_amount || 0) < Number(inv.total || 0);
+        const title = isUnpaid ? "Invoice Payment Pending" : "Invoice Paid";
+        const msg = `${inv.invoice_number} for ${inv.client_name} (₹${Number(inv.total).toLocaleString()})`;
+        const autoId = `auto-i-${inv.id}`;
+        if (!seenIds.has(autoId)) {
+          combined.push({
+            id: autoId,
+            user_id: request.user!.id,
+            title,
+            message: msg,
+            is_read: !isUnpaid,
+            created_at: inv.created_at || new Date(Date.now() - 7200000).toISOString(),
+          });
+          seenIds.add(autoId);
+        }
+      }
+
+      const leads = await withDbTimeout(sql`SELECT id, full_name, company, status, created_at FROM leads ORDER BY created_at DESC LIMIT 2`, 600)
+        .catch(async () => (await listFallbackLeads()).slice(0, 2));
+
+      for (const l of leads) {
+        const title = "New Lead Activity";
+        const msg = `${l.full_name}${l.company ? ` from ${l.company}` : ""} status: ${l.status}`;
+        const autoId = `auto-l-${l.id}`;
+        if (!seenIds.has(autoId)) {
+          combined.push({
+            id: autoId,
+            user_id: request.user!.id,
+            title,
+            message: msg,
+            is_read: false,
+            created_at: l.created_at || new Date(Date.now() - 10800000).toISOString(),
+          });
+          seenIds.add(autoId);
+        }
+      }
+    } catch {}
+  }
+
+  combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  response.json({ data: combined.slice(0, 25) });
 });
+
 app.get("/api/notifications/history", requireAuth, async (request: AuthRequest, response) => {
   try {
     const rows = await withDbTimeout(sql`SELECT id, user_id, title, message, is_read, created_at FROM notifications WHERE user_id = ${request.user!.id} ORDER BY created_at DESC`, 800);
     response.json({ data: rows });
   } catch {
-    response.json({ data: [] });
+    response.json({ data: memoryNotifications.filter(m => !m.user_id || m.user_id === request.user!.id) });
   }
 });
+
 app.patch("/api/notifications/:id/read", requireAuth, async (request: AuthRequest, response) => {
+  const notifId = String(request.params.id);
+  const mem = memoryNotifications.find(m => m.id === notifId);
+  if (mem) mem.is_read = true;
   try {
-    const rows = await withDbTimeout(sql`UPDATE notifications SET is_read = true WHERE id = ${String(request.params.id)} AND user_id = ${request.user!.id} RETURNING id, user_id, title, message, is_read, created_at`, 800);
-    if (!rows[0]) { response.status(404).json({ message: "Notification not found" }); return; }
-    response.json({ data: rows[0] });
+    const rows = await withDbTimeout(sql`UPDATE notifications SET is_read = true WHERE id = ${notifId} AND user_id = ${request.user!.id} RETURNING id, user_id, title, message, is_read, created_at`, 800);
+    response.json({ data: rows[0] || { id: notifId, is_read: true } });
   } catch {
-    response.json({ data: { id: request.params.id, is_read: true } });
+    response.json({ data: { id: notifId, is_read: true } });
   }
 });
+
 app.post("/api/notifications/read-all", requireAuth, async (request: AuthRequest, response) => {
+  for (const m of memoryNotifications) {
+    if (!m.user_id || m.user_id === request.user!.id) m.is_read = true;
+  }
   try {
     await withDbTimeout(sql`UPDATE notifications SET is_read = true WHERE user_id = ${request.user!.id} AND is_read = false`, 800);
-    response.status(204).send();
-  } catch {
-    response.status(204).send();
-  }
+  } catch {}
+  response.status(204).send();
 });
+
 app.post("/api/notifications/clear-read", requireAuth, async (request: AuthRequest, response) => {
+  for (let i = memoryNotifications.length - 1; i >= 0; i--) {
+    if (memoryNotifications[i].is_read && (!memoryNotifications[i].user_id || memoryNotifications[i].user_id === request.user!.id)) {
+      memoryNotifications[i].hidden_from_bell = true;
+    }
+  }
   try {
     await withDbTimeout(sql`UPDATE notifications SET hidden_from_bell = true WHERE user_id = ${request.user!.id} AND is_read = true`, 800);
-    response.status(204).send();
-  } catch {
-    response.status(204).send();
-  }
+  } catch {}
+  response.status(204).send();
 });
 app.get("/api/leads", requireAuth, async (_request: AuthRequest, response) => {
   try {
@@ -246,6 +390,7 @@ app.post("/api/leads", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), 
   const data = parsed.data;
   try {
     const rows = await withDbTimeout(sql`INSERT INTO leads (full_name, company, email, phone, source, notes, status, assigned_to_id) VALUES (${data.fullName}, ${data.company ?? null}, ${data.email ?? null}, ${data.phone ?? null}, ${data.source}, ${data.notes ?? null}, ${data.status ?? "NEW"}, ${request.user!.id}) RETURNING *`, 1200);
+    recordNotification("New Lead Created", `${data.fullName}${data.company ? ` (${data.company})` : ""} was added to CRM`, request.user!.id);
     response.status(201).json({ data: rows[0] });
   } catch {
     const lead = await addFallbackLead({
@@ -257,6 +402,7 @@ app.post("/api/leads", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), 
       notes: data.notes ?? null,
       assigned_to_id: request.user!.id,
     });
+    recordNotification("New Lead Created", `${data.fullName}${data.company ? ` (${data.company})` : ""} was added to CRM`, request.user!.id);
     response.status(201).json({ data: lead, fallback: true });
   }
 });
@@ -317,10 +463,12 @@ app.post("/api/leads/:id/convert", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"
       const lead = await sql`SELECT id, customer_id, status FROM leads WHERE id = ${String(request.params.id)} LIMIT 1`;
       response.status(lead[0] ? 409 : 404).json({ message:lead[0] ? "Lead has already been converted" : "Lead not found" }); return;
     }
+    recordNotification("Lead Converted", `${rows[0].full_name || "Lead"} has been converted to an active client`, request.user!.id);
     response.json({ data:rows[0], client:rows[0].client });
   } catch {
     const res = await convertFallbackLead(String(request.params.id));
     if (!res) { response.status(404).json({ message: "Lead not found" }); return; }
+    recordNotification("Lead Converted", `${res.full_name || "Lead"} has been converted to an active client`, request.user!.id);
     response.json({ data: res, client: res.client, fallback: true });
   }
 });
@@ -332,12 +480,13 @@ app.get("/api/followups", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"
     response.json({ data: await listFallbackFollowups(), fallback: true });
   }
 });
-app.post("/api/followups", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
+app.post("/api/followups", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request: AuthRequest, response) => {
   const parsed = followupInput.safeParse(request.body);
   if (!parsed.success) { response.status(400).json({ message: "Invalid follow-up", errors: parsed.error.flatten() }); return; }
   const data = parsed.data;
   try {
     const rows = await withDbTimeout(sql`INSERT INTO followups (lead_id, lead_name, company, property, type, followup_date, followup_time, assigned_to, priority, status, notes) VALUES (${data.leadId ?? null}, ${data.leadName}, ${data.company ?? null}, ${data.property ?? null}, ${data.type}, ${data.date}, ${data.time ?? null}, ${data.assignedTo ?? null}, ${data.priority ?? null}, ${data.status ?? "Scheduled"}, ${data.notes ?? null}) RETURNING *`, 1200);
+    recordNotification("Follow-up Scheduled", `Follow-up with ${data.leadName} scheduled for ${data.date}`, request.user!.id);
     response.status(201).json({ data: rows[0] });
   } catch {
     const followup = await addFallbackFollowup({
@@ -353,6 +502,7 @@ app.post("/api/followups", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES
       status: data.status ?? "Scheduled",
       notes: data.notes ?? null,
     });
+    recordNotification("Follow-up Scheduled", `Follow-up with ${data.leadName} scheduled for ${data.date}`, request.user!.id);
     response.status(201).json({ data: followup, fallback: true });
   }
 });
@@ -383,14 +533,16 @@ app.patch("/api/followups/:id", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "
     response.json({ data: updated, fallback: true });
   }
 });
-app.post("/api/followups/:id/complete", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
+app.post("/api/followups/:id/complete", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request: AuthRequest, response) => {
   try {
     const rows = await withDbTimeout(sql`UPDATE followups SET status = 'Completed', completed_at = COALESCE(completed_at, now()), updated_at = now() WHERE id = ${String(request.params.id)} RETURNING *`, 1200);
     if (!rows[0]) { response.status(404).json({ message:"Follow-up not found" }); return; }
+    recordNotification("Follow-up Completed", `Follow-up with ${rows[0].lead_name || "lead"} marked as completed`, request.user!.id);
     response.json({ data:rows[0] });
   } catch {
     const updated = await completeFallbackFollowup(String(request.params.id));
     if (!updated) { response.status(404).json({ message:"Follow-up not found" }); return; }
+    recordNotification("Follow-up Completed", `Follow-up with ${updated.lead_name || "lead"} marked as completed`, request.user!.id);
     response.json({ data: updated, fallback: true });
   }
 });
@@ -419,6 +571,7 @@ app.post("/api/clients", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES")
   const data = parsed.data;
   try {
     const rows = await withDbTimeout(sql`INSERT INTO clients (name, company, email, phone, gst_number) VALUES (${data.name}, ${data.company ?? null}, ${data.email ?? null}, ${data.phone}, ${data.gstNumber ?? null}) RETURNING *`, 1200);
+    recordNotification("Client Onboarded", `${data.name}${data.company ? ` (${data.company})` : ""} was added to CRM`, request.user!.id);
     response.status(201).json({ data: rows[0] });
   } catch {
     const client = await addFallbackClient({
@@ -428,6 +581,7 @@ app.post("/api/clients", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES")
       phone: data.phone,
       gst_number: data.gstNumber ?? null,
     });
+    recordNotification("Client Onboarded", `${data.name}${data.company ? ` (${data.company})` : ""} was added to CRM`, request.user!.id);
     response.status(201).json({ data: client, fallback: true });
   }
 });
@@ -439,7 +593,7 @@ app.get("/api/quotations", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES
     response.json({ data: await listFallbackQuotations(), fallback: true });
   }
 });
-app.post("/api/quotations", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request, response) => {
+app.post("/api/quotations", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALES"), async (request: AuthRequest, response) => {
   const parsed = quotationInput.safeParse(request.body);
   if (!parsed.success) { response.status(400).json({ message:"Invalid quotation", errors:parsed.error.flatten() }); return; }
   const data = parsed.data;
@@ -450,6 +604,7 @@ app.post("/api/quotations", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALE
     }
     const qNum = `Q-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
     const rows = await withDbTimeout(sql`INSERT INTO quotations (quotation_number, client_id, client_name, amount, valid_until, status) VALUES (${qNum}, ${data.clientId ?? null}, ${data.clientName}, ${data.amount}, ${data.validUntil}, ${data.status}) RETURNING *`, 1200);
+    recordNotification("Quotation Generated", `Quotation #${qNum} (₹${Number(data.amount).toLocaleString()}) for ${data.clientName}`, request.user!.id);
     response.status(201).json({ data:rows[0] });
   } catch {
     const quotation = await addFallbackQuotation({
@@ -460,6 +615,7 @@ app.post("/api/quotations", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN", "SALE
       valid_until: data.validUntil,
       status: data.status,
     });
+    recordNotification("Quotation Generated", `Quotation #${quotation.quotation_number} (₹${Number(data.amount).toLocaleString()}) for ${data.clientName}`, request.user!.id);
     response.status(201).json({ data: quotation, fallback: true });
   }
 });
@@ -481,6 +637,7 @@ app.post("/api/invoices", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async 
     const creator = await withDbTimeout(sql`SELECT name FROM users WHERE id = ${request.user!.id} LIMIT 1`, 800);
     const creatorName = creator[0]?.name ?? (findDemoUser(request.user!.id)?.name || request.user!.role);
     const rows = await withDbTimeout(sql`INSERT INTO invoices (invoice_number, client_id, total, paid_amount, due_date, created_by_id, created_by_name) VALUES (${data.invoiceNumber}, ${data.clientId}, ${data.total}, ${data.paidAmount ?? 0}, ${data.dueDate}, ${request.user!.id}, ${creatorName}) RETURNING *`, 1200);
+    recordNotification("Invoice Created", `Invoice #${data.invoiceNumber} for ${data.clientName ?? "Client"} (₹${Number(data.total).toLocaleString()})`, request.user!.id);
     response.status(201).json({ data: rows[0] });
   } catch {
     const invoice = await addFallbackInvoice({
@@ -493,6 +650,7 @@ app.post("/api/invoices", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async 
       created_by_id: request.user!.id,
       created_by_name: findDemoUser(request.user!.id)?.name || request.user!.role,
     });
+    recordNotification("Invoice Created", `Invoice #${data.invoiceNumber} for ${data.clientName ?? "Client"} (₹${Number(data.total).toLocaleString()})`, request.user!.id);
     response.status(201).json({ data: invoice, fallback: true });
   }
 });
@@ -570,8 +728,8 @@ app.post("/api/payments", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async 
   const data = parsed.data;
   try {
     const invoice = request.user!.role === "SUPER_ADMIN"
-      ? await withDbTimeout(sql`SELECT id, total FROM invoices WHERE id = ${data.invoiceId} LIMIT 1`, 800)
-      : await withDbTimeout(sql`SELECT id, total FROM invoices WHERE id = ${data.invoiceId} AND created_by_id = ${request.user!.id} LIMIT 1`, 800);
+      ? await withDbTimeout(sql`SELECT id, total, invoice_number FROM invoices WHERE id = ${data.invoiceId} LIMIT 1`, 800)
+      : await withDbTimeout(sql`SELECT id, total, invoice_number FROM invoices WHERE id = ${data.invoiceId} AND created_by_id = ${request.user!.id} LIMIT 1`, 800);
     if (!invoice[0]) { response.status(404).json({ message: "Invoice not found" }); return; }
     const paidRows = await withDbTimeout(sql`SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE invoice_id = ${data.invoiceId}`, 800);
     const alreadyPaid = Number(paidRows[0]?.total_paid ?? 0); const remaining = Number(invoice[0].total) - alreadyPaid;
@@ -580,6 +738,7 @@ app.post("/api/payments", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async 
     const creatorName = creator[0]?.name ?? (findDemoUser(request.user!.id)?.name || request.user!.role);
     const rows = await withDbTimeout(sql`INSERT INTO payments (invoice_id, amount, method, payment_date, notes, created_by_id, created_by_name) VALUES (${data.invoiceId}, ${data.amount}, ${data.method}, ${data.paymentDate ?? null}, ${data.notes ?? null}, ${request.user!.id}, ${creatorName}) RETURNING *`, 1200);
     await withDbTimeout(sql`UPDATE invoices SET paid_amount = ${alreadyPaid + data.amount} WHERE id = ${data.invoiceId}`, 800);
+    recordNotification("Payment Recorded", `Payment of ₹${Number(data.amount).toLocaleString()} received (${data.method}) for #${invoice[0].invoice_number || "Invoice"}`, request.user!.id);
     response.status(201).json({ data: rows[0] });
   } catch {
     const payment = await addFallbackPayment({
@@ -591,6 +750,7 @@ app.post("/api/payments", requireAuth, allow("SUPER_ADMIN", "SUB_ADMIN"), async 
       created_by_id: request.user!.id,
       created_by_name: findDemoUser(request.user!.id)?.name || request.user!.role,
     });
+    recordNotification("Payment Recorded", `Payment of ₹${Number(data.amount).toLocaleString()} received (${data.method})`, request.user!.id);
     response.status(201).json({ data: payment, fallback: true });
   }
 });
@@ -662,9 +822,12 @@ app.post("/api/projects", requireAuth, allow("SUPER_ADMIN"), async (request: Aut
   const data = parsed.data;
   try {
     const rows = await withDbTimeout(sql`INSERT INTO projects (name, client_name, description, status, priority, due_date, assigned_developer_id, created_by_id) VALUES (${data.name}, ${data.clientName ?? null}, ${data.description ?? null}, ${data.status}, ${data.priority}, ${data.dueDate ?? null}, ${data.assignedDeveloperId}, ${request.user!.id}) RETURNING *`, 1200);
+    recordNotification("Project Assigned", `Project "${data.name}" was initialized`, request.user!.id);
     response.status(201).json({ data: rows[0] });
   } catch {
-    response.status(201).json({ data: await createFallbackProject({ name: data.name, client_name: data.clientName ?? null, description: data.description ?? null, status: data.status, priority: data.priority, due_date: data.dueDate ?? null, assigned_developer_id: data.assignedDeveloperId, created_by_id: request.user!.id }), fallback: true });
+    const project = await createFallbackProject({ name: data.name, client_name: data.clientName ?? null, description: data.description ?? null, status: data.status, priority: data.priority, due_date: data.dueDate ?? null, assigned_developer_id: data.assignedDeveloperId, created_by_id: request.user!.id });
+    recordNotification("Project Assigned", `Project "${data.name}" was initialized`, request.user!.id);
+    response.status(201).json({ data: project, fallback: true });
   }
 });
 app.patch("/api/projects/:id/status", requireAuth, allow("SUPER_ADMIN", "DEVELOPER"), async (request: AuthRequest, response) => {
@@ -718,11 +881,13 @@ app.post("/api/projects/:id/updates", requireAuth, allow("SUPER_ADMIN", "DEVELOP
     const nextProgress = nextStatus === "COMPLETED" ? 100 : data.progress;
     const rows = await withDbTimeout(sql`INSERT INTO project_updates (project_id, author_id, message, progress, old_status, new_status, old_percentage, new_percentage) VALUES (${projectId}, ${request.user!.id}, ${data.message}, ${nextProgress}, ${project[0].status}, ${nextStatus}, ${project[0].progress_percentage ?? 0}, ${nextProgress}) RETURNING *`, 1200);
     await withDbTimeout(sql`UPDATE projects SET status = ${nextStatus}, progress_percentage = ${nextProgress}, updated_at = now() WHERE id = ${projectId}`, 800);
+    recordNotification("Project Update", `Project update: ${data.message.slice(0, 35)} (${nextProgress}% done)`, request.user!.id);
     response.status(201).json({ data: rows[0], project:{ id:projectId, status:nextStatus, progress:nextProgress } });
   } catch {
     try {
       const update = await addFallbackUpdate(projectId, request.user!.id, data.message, data.progress);
       const nextStatus = data.status ?? (data.progress === 100 ? "COMPLETED" : data.progress > 0 ? "IN_PROGRESS" : "PENDING");
+      recordNotification("Project Update", `Project update: ${data.message.slice(0, 35)} (${data.progress}% done)`, request.user!.id);
       response.status(201).json({ data: update, project: { id: projectId, status: nextStatus, progress: data.progress }, fallback: true });
     } catch (err: any) {
       response.status(503).json({ message: err?.message || "Unable to save project progress" });
@@ -781,7 +946,7 @@ app.get("/api/marketing/campaigns", requireAuth, allow("SUPER_ADMIN", "DIGITAL_M
     response.status(500).json({ message: "Unable to load campaigns" });
   }
 });
-app.post("/api/marketing/campaigns", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+app.post("/api/marketing/campaigns", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request: AuthRequest, response) => {
   const parsed = campaignInput.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({ message: "Invalid campaign parameters", errors: parsed.error.flatten() });
@@ -789,6 +954,7 @@ app.post("/api/marketing/campaigns", requireAuth, allow("SUPER_ADMIN", "DIGITAL_
   }
   try {
     const campaign = await createMarketingCampaign(parsed.data);
+    recordNotification("Marketing Campaign Created", `Campaign "${parsed.data.name}" (${parsed.data.platform}) was launched`, request.user!.id);
     response.status(201).json({ data: campaign });
   } catch {
     response.status(500).json({ message: "Unable to create campaign" });
@@ -839,6 +1005,77 @@ app.get("/api/marketing/leads", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKE
     response.status(500).json({ message: "Unable to load marketing leads" });
   }
 });
+app.patch("/api/marketing/campaigns/:id", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  const parsed = campaignUpdateInput.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ message: "Invalid update fields", errors: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const updated = await updateMarketingCampaign(String(request.params.id), {
+      ...(parsed.data.name ? { name: parsed.data.name } : {}),
+      ...(parsed.data.budget ? { budget: parsed.data.budget } : {}),
+      ...(parsed.data.status ? { status: parsed.data.status } : {}),
+      ...(parsed.data.targetAudience !== undefined ? { target_audience: parsed.data.targetAudience } : {}),
+      ...(parsed.data.channel ? { channel: parsed.data.channel } : {}),
+      ...(parsed.data.platform ? { platform: parsed.data.platform } : {}),
+    });
+    response.json({ data: updated, message: "Campaign updated successfully" });
+  } catch {
+    response.status(404).json({ message: "Campaign not found" });
+  }
+});
+app.delete("/api/marketing/creatives/:id", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    await deleteMarketingCreative(String(request.params.id));
+    response.status(204).send();
+  } catch {
+    response.status(404).json({ message: "Creative asset not found" });
+  }
+});
+app.post("/api/marketing/leads/batch-sync", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request: AuthRequest, response) => {
+  try {
+    const unsynced = await getUnsyncedMarketingLeads();
+    const syncedResults = [];
+    for (const lead of unsynced) {
+      await markMarketingLeadSynced(lead.id);
+      try {
+        const dbInsert = sql`INSERT INTO leads (full_name, company, email, phone, source, notes, status, assigned_to_id) VALUES (${lead.lead_name}, ${lead.company}, ${lead.email}, ${lead.phone}, ${"Digital Marketing (" + lead.platform + ")"}, ${"Inbound lead from " + lead.campaign_name + " [" + lead.quality_score + "]"}, 'NEW', ${request.user!.id}) RETURNING *`;
+        await withDbTimeout(dbInsert, 800);
+      } catch {
+        await addFallbackLead({
+          full_name: lead.lead_name,
+          company: lead.company,
+          email: lead.email,
+          phone: lead.phone,
+          source: `Digital Marketing (${lead.platform})`,
+          notes: `Inbound lead from ${lead.campaign_name} [${lead.quality_score}]`,
+          assigned_to_id: request.user!.id,
+        });
+      }
+      syncedResults.push(lead.id);
+    }
+    response.json({ message: `Successfully synced ${syncedResults.length} leads into the CRM sales pipeline`, count: syncedResults.length });
+  } catch {
+    response.status(500).json({ message: "Unable to batch sync leads" });
+  }
+});
+app.post("/api/marketing/recommendations/apply", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  const { title } = request.body || {};
+  try {
+    if (typeof title === "string" && title.toLowerCase().includes("scale google search")) {
+      const campaigns = await listMarketingCampaigns({ platform: "Google Ads" });
+      const targetCamp = campaigns[0];
+      if (targetCamp) {
+        await updateMarketingCampaign(targetCamp.id, { budget: targetCamp.budget + 2500 });
+      }
+    }
+    const overview = await getMarketingOverview();
+    response.json({ data: overview, message: `Recommendation applied: ${title}` });
+  } catch {
+    response.status(500).json({ message: "Unable to apply recommendation" });
+  }
+});
 app.post("/api/marketing/leads/:id/sync-crm", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request: AuthRequest, response) => {
   try {
     const marketingLead = await markMarketingLeadSynced(String(request.params.id));
@@ -862,6 +1099,185 @@ app.post("/api/marketing/leads/:id/sync-crm", requireAuth, allow("SUPER_ADMIN", 
     response.status(404).json({ message: err instanceof Error ? err.message : "Unable to sync lead to CRM" });
   }
 });
+
+// ==========================================
+// CLIENT MANAGEMENT ROUTES
+// ==========================================
+
+const marketingClientInput = z.object({
+  name: z.string().min(1),
+  industry: z.string().min(1),
+  contact_name: z.string().min(1),
+  contact_email: z.string().email(),
+  monthly_retainer: z.number().min(0),
+  status: z.enum(["ACTIVE", "ONBOARDING", "PAUSED"]).optional(),
+  website: z.string().optional(),
+});
+
+const marketingClientProjectInput = z.object({
+  client_id: z.string().min(1),
+  title: z.string().min(1),
+  category: z.enum(["Paid Search", "Paid Social", "SEO & Content", "Brand & Creative", "Email & CRM"]),
+  budget: z.number().min(0),
+  target_roas: z.number().optional(),
+  deadline: z.string().min(1),
+  deliverables: z.string().optional(),
+});
+
+const marketingClientAssetInput = z.object({
+  client_id: z.string().min(1),
+  project_id: z.string().optional().nullable(),
+  name: z.string().min(1),
+  asset_type: z.enum(["Ad Creative", "Video Script", "Copywriting", "Brand Asset", "Landing Page", "Report"]),
+  file_format: z.enum(["Figma", "Video / MP4", "Graphic / PNG", "PDF", "Drive / Doc"]),
+  asset_url: z.string().min(1),
+  status: z.enum(["APPROVED", "IN_REVIEW", "NEEDS_REVISION", "DRAFT"]).optional(),
+  version: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// Overview
+app.get("/api/marketing/clients/overview", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (_request, response) => {
+  try {
+    const overview = await getMarketingClientsOverview();
+    response.json({ data: overview });
+  } catch {
+    response.status(500).json({ message: "Unable to fetch client management overview" });
+  }
+});
+
+// Clients
+app.get("/api/marketing/clients", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (_request, response) => {
+  try {
+    const clients = await listMarketingClients();
+    response.json({ data: clients });
+  } catch {
+    response.status(500).json({ message: "Unable to fetch clients" });
+  }
+});
+
+app.post("/api/marketing/clients", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  const parsed = marketingClientInput.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ message: "Invalid client input", errors: parsed.error.issues });
+    return;
+  }
+  try {
+    const client = await addMarketingClient({
+      ...parsed.data,
+      status: parsed.data.status || "ACTIVE",
+    });
+    response.status(201).json({ data: client, message: "Client created successfully" });
+  } catch {
+    response.status(500).json({ message: "Unable to create client" });
+  }
+});
+
+app.patch("/api/marketing/clients/:id", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    const updated = await updateMarketingClient(String(request.params.id), request.body);
+    response.json({ data: updated, message: "Client updated successfully" });
+  } catch (err) {
+    response.status(404).json({ message: err instanceof Error ? err.message : "Unable to update client" });
+  }
+});
+
+app.delete("/api/marketing/clients/:id", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    await deleteMarketingClient(String(request.params.id));
+    response.status(204).send();
+  } catch {
+    response.status(404).json({ message: "Client not found" });
+  }
+});
+
+// Projects
+app.get("/api/marketing/projects", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    const clientId = typeof request.query.clientId === "string" ? request.query.clientId : undefined;
+    const projects = await listMarketingClientProjects(clientId);
+    response.json({ data: projects });
+  } catch {
+    response.status(500).json({ message: "Unable to fetch client projects" });
+  }
+});
+
+app.post("/api/marketing/projects", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  const parsed = marketingClientProjectInput.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ message: "Invalid project input", errors: parsed.error.issues });
+    return;
+  }
+  try {
+    const project = await addMarketingClientProject(parsed.data);
+    response.status(201).json({ data: project, message: "Client project created successfully" });
+  } catch {
+    response.status(500).json({ message: "Unable to create client project" });
+  }
+});
+
+app.patch("/api/marketing/projects/:id", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    const updated = await updateMarketingClientProject(String(request.params.id), request.body);
+    response.json({ data: updated, message: "Project updated successfully" });
+  } catch (err) {
+    response.status(404).json({ message: err instanceof Error ? err.message : "Unable to update project" });
+  }
+});
+
+app.delete("/api/marketing/projects/:id", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    await deleteMarketingClientProject(String(request.params.id));
+    response.status(204).send();
+  } catch {
+    response.status(404).json({ message: "Project not found" });
+  }
+});
+
+// Assets
+app.get("/api/marketing/assets", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    const clientId = typeof request.query.clientId === "string" ? request.query.clientId : undefined;
+    const projectId = typeof request.query.projectId === "string" ? request.query.projectId : undefined;
+    const assets = await listMarketingClientAssets(clientId, projectId);
+    response.json({ data: assets });
+  } catch {
+    response.status(500).json({ message: "Unable to fetch client assets" });
+  }
+});
+
+app.post("/api/marketing/assets", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  const parsed = marketingClientAssetInput.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ message: "Invalid asset input", errors: parsed.error.issues });
+    return;
+  }
+  try {
+    const asset = await addMarketingClientAsset(parsed.data);
+    response.status(201).json({ data: asset, message: "Client asset registered successfully" });
+  } catch {
+    response.status(500).json({ message: "Unable to register client asset" });
+  }
+});
+
+app.patch("/api/marketing/assets/:id", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    const updated = await updateMarketingClientAsset(String(request.params.id), request.body);
+    response.json({ data: updated, message: "Asset updated successfully" });
+  } catch (err) {
+    response.status(404).json({ message: err instanceof Error ? err.message : "Unable to update asset" });
+  }
+});
+
+app.delete("/api/marketing/assets/:id", requireAuth, allow("SUPER_ADMIN", "DIGITAL_MARKETING"), async (request, response) => {
+  try {
+    await deleteMarketingClientAsset(String(request.params.id));
+    response.status(204).send();
+  } catch {
+    response.status(404).json({ message: "Asset not found" });
+  }
+});
+
 app.use((_request, response) => response.status(404).json({ message: "Route not found" }));
 app.use((error: Error, _request: Request, response: Response, _next: express.NextFunction) => {
   console.error(error);

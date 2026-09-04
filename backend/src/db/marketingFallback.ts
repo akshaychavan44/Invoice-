@@ -492,3 +492,418 @@ export async function getUnsyncedMarketingLeads() {
   return store.leads.filter((l) => !l.synced_to_crm);
 }
 
+// ==========================================
+// CLIENT MANAGEMENT ENGINE
+// ==========================================
+
+export type MarketingClient = {
+  id: string;
+  name: string;
+  industry: string;
+  contact_name: string;
+  contact_email: string;
+  monthly_retainer: number;
+  status: "ACTIVE" | "ONBOARDING" | "PAUSED";
+  website?: string;
+  created_at: string;
+};
+
+export type MarketingClientProject = {
+  id: string;
+  client_id: string;
+  client_name: string;
+  title: string;
+  category: "Paid Search" | "Paid Social" | "SEO & Content" | "Brand & Creative" | "Email & CRM";
+  budget: number;
+  spend: number;
+  target_roas: number;
+  current_roas: number;
+  status: "PLANNING" | "IN_PROGRESS" | "IN_REVIEW" | "ACTIVE" | "COMPLETED";
+  deadline: string;
+  deliverables: string;
+  created_at: string;
+};
+
+export type MarketingClientAsset = {
+  id: string;
+  client_id: string;
+  client_name: string;
+  project_id?: string | null;
+  project_title?: string | null;
+  name: string;
+  asset_type: "Ad Creative" | "Video Script" | "Copywriting" | "Brand Asset" | "Landing Page" | "Report";
+  file_format: "Figma" | "Video / MP4" | "Graphic / PNG" | "PDF" | "Drive / Doc";
+  asset_url: string;
+  status: "APPROVED" | "IN_REVIEW" | "NEEDS_REVISION" | "DRAFT";
+  version: string;
+  notes?: string;
+  created_at: string;
+};
+
+const initialClients: MarketingClient[] = [
+  {
+    id: "client-001",
+    name: "Apex Global Logistics",
+    industry: "Supply Chain & Freight",
+    contact_name: "Elena Rostova",
+    contact_email: "elena.rostova@apexlogistics.io",
+    monthly_retainer: 12500,
+    status: "ACTIVE",
+    website: "https://apexlogistics.io",
+    created_at: new Date(Date.now() - 45 * 86400000).toISOString(),
+  },
+  {
+    id: "client-002",
+    name: "Zenith Health Systems",
+    industry: "Healthcare & MedTech",
+    contact_name: "Dr. Marcus Vance",
+    contact_email: "m.vance@zenithhealth.org",
+    monthly_retainer: 9800,
+    status: "ACTIVE",
+    website: "https://zenithhealth.org",
+    created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+  },
+  {
+    id: "client-003",
+    name: "Aura Retail Collective",
+    industry: "Luxury Apparel & D2C",
+    contact_name: "Camille Dupont",
+    contact_email: "camille@auraretail.com",
+    monthly_retainer: 15000,
+    status: "ACTIVE",
+    website: "https://auraretail.com",
+    created_at: new Date(Date.now() - 20 * 86400000).toISOString(),
+  },
+  {
+    id: "client-004",
+    name: "Solstice AI Enterprise",
+    industry: "B2B SaaS & Cloud",
+    contact_name: "Karan Singhania",
+    contact_email: "karan@solsticecloud.ai",
+    monthly_retainer: 18000,
+    status: "ONBOARDING",
+    website: "https://solsticecloud.ai",
+    created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
+  },
+];
+
+const initialProjects: MarketingClientProject[] = [
+  {
+    id: "proj-001",
+    client_id: "client-001",
+    client_name: "Apex Global Logistics",
+    title: "Q4 Enterprise Search & PMax Scale",
+    category: "Paid Search",
+    budget: 25000,
+    spend: 18400,
+    target_roas: 5.5,
+    current_roas: 5.82,
+    status: "ACTIVE",
+    deadline: "2026-11-30",
+    deliverables: "High-intent search ad groups, Conversions API audit, weekly pacing reports",
+    created_at: new Date(Date.now() - 25 * 86400000).toISOString(),
+  },
+  {
+    id: "proj-002",
+    client_id: "client-002",
+    client_name: "Zenith Health Systems",
+    title: "National Clinic Patient Acquisition",
+    category: "Paid Social",
+    budget: 14000,
+    spend: 9200,
+    target_roas: 4.2,
+    current_roas: 4.6,
+    status: "IN_PROGRESS",
+    deadline: "2026-10-15",
+    deliverables: "Geotargeted Meta reels, localized HIPAA-compliant landing pages",
+    created_at: new Date(Date.now() - 18 * 86400000).toISOString(),
+  },
+  {
+    id: "proj-003",
+    client_id: "client-003",
+    client_name: "Aura Retail Collective",
+    title: "Black Friday Creative Sprint & Retargeting",
+    category: "Brand & Creative",
+    budget: 32000,
+    spend: 12100,
+    target_roas: 6.0,
+    current_roas: 6.34,
+    status: "ACTIVE",
+    deadline: "2026-11-28",
+    deliverables: "16 UGC video variations, dynamic carousel catalog ads, influencer whitelisting",
+    created_at: new Date(Date.now() - 12 * 86400000).toISOString(),
+  },
+  {
+    id: "proj-004",
+    client_id: "client-004",
+    client_name: "Solstice AI Enterprise",
+    title: "C-Suite ABM Thought Leadership & InMail",
+    category: "Paid Social",
+    budget: 20000,
+    spend: 4500,
+    target_roas: 4.8,
+    current_roas: 4.9,
+    status: "PLANNING",
+    deadline: "2026-12-15",
+    deliverables: "Target account list build, executive InMail sequences, gated benchmark report",
+    created_at: new Date(Date.now() - 4 * 86400000).toISOString(),
+  },
+];
+
+const initialAssets: MarketingClientAsset[] = [
+  {
+    id: "asset-001",
+    client_id: "client-001",
+    client_name: "Apex Global Logistics",
+    project_id: "proj-001",
+    project_title: "Q4 Enterprise Search & PMax Scale",
+    name: "Apex Enterprise Ad Copy Matrix v2",
+    asset_type: "Copywriting",
+    file_format: "Drive / Doc",
+    asset_url: "https://docs.google.com/document/d/1apex-ad-matrix",
+    status: "APPROVED",
+    version: "v2.1",
+    notes: "Approved by Elena for US & European freight campaigns.",
+    created_at: new Date(Date.now() - 15 * 86400000).toISOString(),
+  },
+  {
+    id: "asset-002",
+    client_id: "client-002",
+    client_name: "Zenith Health Systems",
+    project_id: "proj-002",
+    project_title: "National Clinic Patient Acquisition",
+    name: "Doctor Trust 30s Video Ad Hook Script",
+    asset_type: "Video Script",
+    file_format: "Video / MP4",
+    asset_url: "https://drive.google.com/file/d/zenith-video-hook",
+    status: "APPROVED",
+    version: "v1.4",
+    notes: "Clinical board approved hook addressing rapid telemedicine bookings.",
+    created_at: new Date(Date.now() - 10 * 86400000).toISOString(),
+  },
+  {
+    id: "asset-003",
+    client_id: "client-003",
+    client_name: "Aura Retail Collective",
+    project_id: "proj-003",
+    project_title: "Black Friday Creative Sprint & Retargeting",
+    name: "High-ROAS Story & Reel Motion Creatives",
+    asset_type: "Ad Creative",
+    file_format: "Figma",
+    asset_url: "https://www.figma.com/file/aura-blackfriday-assets",
+    status: "IN_REVIEW",
+    version: "v3.0",
+    notes: "Uploaded 8 variations for Camille's design review before cut-off.",
+    created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+  },
+  {
+    id: "asset-004",
+    client_id: "client-004",
+    client_name: "Solstice AI Enterprise",
+    project_id: "proj-004",
+    project_title: "C-Suite ABM Thought Leadership & InMail",
+    name: "Enterprise Cloud AI Benchmark PDF Report",
+    asset_type: "Brand Asset",
+    file_format: "PDF",
+    asset_url: "https://assets.solsticecloud.ai/reports/cloud-ai-2026.pdf",
+    status: "APPROVED",
+    version: "v1.0",
+    notes: "Gated PDF whitepaper for LinkedIn sponsored content.",
+    created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+  },
+];
+
+const clientStore = {
+  clients: [...initialClients],
+  projects: [...initialProjects],
+  assets: [...initialAssets],
+};
+
+// Client CRUD
+export async function listMarketingClients() {
+  return [...clientStore.clients].sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+export async function getMarketingClient(id: string) {
+  const client = clientStore.clients.find((c) => c.id === id);
+  if (!client) throw new Error("Client not found");
+  return client;
+}
+
+export async function addMarketingClient(input: Omit<MarketingClient, "id" | "created_at">) {
+  const newClient: MarketingClient = {
+    ...input,
+    id: `client-${randomUUID().slice(0, 8)}`,
+    created_at: new Date().toISOString(),
+  };
+  clientStore.clients.unshift(newClient);
+  return newClient;
+}
+
+export async function updateMarketingClient(id: string, updates: Partial<MarketingClient>) {
+  const client = clientStore.clients.find((c) => c.id === id);
+  if (!client) throw new Error("Client not found");
+  Object.assign(client, updates);
+  // Update denormalized client_name in projects and assets
+  if (updates.name) {
+    clientStore.projects.filter((p) => p.client_id === id).forEach((p) => (p.client_name = updates.name!));
+    clientStore.assets.filter((a) => a.client_id === id).forEach((a) => (a.client_name = updates.name!));
+  }
+  return client;
+}
+
+export async function deleteMarketingClient(id: string) {
+  const idx = clientStore.clients.findIndex((c) => c.id === id);
+  if (idx === -1) throw new Error("Client not found");
+  clientStore.clients.splice(idx, 1);
+  // Cascade delete projects & assets
+  clientStore.projects = clientStore.projects.filter((p) => p.client_id !== id);
+  clientStore.assets = clientStore.assets.filter((a) => a.client_id !== id);
+  return true;
+}
+
+// Project CRUD
+export async function listMarketingClientProjects(clientId?: string) {
+  let list = [...clientStore.projects];
+  if (clientId) {
+    list = list.filter((p) => p.client_id === clientId);
+  }
+  return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+export async function addMarketingClientProject(input: {
+  client_id: string;
+  title: string;
+  category: MarketingClientProject["category"];
+  budget: number;
+  target_roas?: number;
+  deadline: string;
+  deliverables?: string;
+}) {
+  const client = clientStore.clients.find((c) => c.id === input.client_id);
+  const clientName = client ? client.name : "Client Project";
+  const newProj: MarketingClientProject = {
+    id: `proj-${randomUUID().slice(0, 8)}`,
+    client_id: input.client_id,
+    client_name: clientName,
+    title: input.title,
+    category: input.category,
+    budget: Number(input.budget),
+    spend: 0,
+    target_roas: input.target_roas ? Number(input.target_roas) : 5.0,
+    current_roas: input.target_roas ? Number(input.target_roas) : 5.0,
+    status: "IN_PROGRESS",
+    deadline: input.deadline,
+    deliverables: input.deliverables || "Standard campaign deliverables",
+    created_at: new Date().toISOString(),
+  };
+  clientStore.projects.unshift(newProj);
+  return newProj;
+}
+
+export async function updateMarketingClientProject(id: string, updates: Partial<MarketingClientProject>) {
+  const proj = clientStore.projects.find((p) => p.id === id);
+  if (!proj) throw new Error("Project not found");
+  Object.assign(proj, updates);
+  if (updates.title) {
+    clientStore.assets.filter((a) => a.project_id === id).forEach((a) => (a.project_title = updates.title!));
+  }
+  return proj;
+}
+
+export async function deleteMarketingClientProject(id: string) {
+  const idx = clientStore.projects.findIndex((p) => p.id === id);
+  if (idx === -1) throw new Error("Project not found");
+  clientStore.projects.splice(idx, 1);
+  return true;
+}
+
+// Asset CRUD
+export async function listMarketingClientAssets(clientId?: string, projectId?: string) {
+  let list = [...clientStore.assets];
+  if (clientId) list = list.filter((a) => a.client_id === clientId);
+  if (projectId) list = list.filter((a) => a.project_id === projectId);
+  return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+export async function addMarketingClientAsset(input: {
+  client_id: string;
+  project_id?: string | null;
+  name: string;
+  asset_type: MarketingClientAsset["asset_type"];
+  file_format: MarketingClientAsset["file_format"];
+  asset_url: string;
+  status?: MarketingClientAsset["status"];
+  version?: string;
+  notes?: string;
+}) {
+  const client = clientStore.clients.find((c) => c.id === input.client_id);
+  const clientName = client ? client.name : "Client Asset";
+  const project = input.project_id ? clientStore.projects.find((p) => p.id === input.project_id) : null;
+  const newAsset: MarketingClientAsset = {
+    id: `asset-${randomUUID().slice(0, 8)}`,
+    client_id: input.client_id,
+    client_name: clientName,
+    project_id: input.project_id || null,
+    project_title: project ? project.title : null,
+    name: input.name,
+    asset_type: input.asset_type,
+    file_format: input.file_format,
+    asset_url: input.asset_url,
+    status: input.status || "IN_REVIEW",
+    version: input.version || "v1.0",
+    notes: input.notes || "",
+    created_at: new Date().toISOString(),
+  };
+  clientStore.assets.unshift(newAsset);
+  return newAsset;
+}
+
+export async function updateMarketingClientAsset(id: string, updates: Partial<MarketingClientAsset>) {
+  const asset = clientStore.assets.find((a) => a.id === id);
+  if (!asset) throw new Error("Asset not found");
+  Object.assign(asset, updates);
+  return asset;
+}
+
+export async function deleteMarketingClientAsset(id: string) {
+  const idx = clientStore.assets.findIndex((a) => a.id === id);
+  if (idx === -1) throw new Error("Asset not found");
+  clientStore.assets.splice(idx, 1);
+  return true;
+}
+
+// Aggregates for Client Management Workspace
+export async function getMarketingClientsOverview() {
+  const totalClients = clientStore.clients.length;
+  const activeClients = clientStore.clients.filter((c) => c.status === "ACTIVE").length;
+  const totalMonthlyRetainer = clientStore.clients.reduce((acc, c) => acc + c.monthly_retainer, 0);
+  const totalProjects = clientStore.projects.length;
+  const activeProjects = clientStore.projects.filter((p) => p.status === "ACTIVE" || p.status === "IN_PROGRESS").length;
+  const totalBudgetManaged = clientStore.projects.reduce((acc, p) => acc + p.budget, 0);
+  const totalSpend = clientStore.projects.reduce((acc, p) => acc + p.spend, 0);
+  const totalAssets = clientStore.assets.length;
+  const assetsInReview = clientStore.assets.filter((a) => a.status === "IN_REVIEW").length;
+  const assetsApproved = clientStore.assets.filter((a) => a.status === "APPROVED").length;
+
+  return {
+    totalClients,
+    activeClients,
+    totalMonthlyRetainer,
+    totalProjects,
+    activeProjects,
+    totalBudgetManaged,
+    totalSpend,
+    totalAssets,
+    assetsInReview,
+    assetsApproved,
+    clientPortfolio: clientStore.clients.map((c) => ({
+      name: c.name,
+      retainer: c.monthly_retainer,
+      projectCount: clientStore.projects.filter((p) => p.client_id === c.id).length,
+      assetCount: clientStore.assets.filter((a) => a.client_id === c.id).length,
+    })),
+  };
+}
+
+

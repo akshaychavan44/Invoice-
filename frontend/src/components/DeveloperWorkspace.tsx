@@ -42,12 +42,14 @@ type Update = {
 
 export default function DeveloperWorkspace({
   admin = false,
+  embedded = false,
   onLogout,
   onBack,
   dark: propDark,
   onToggleTheme,
 }: {
   admin?: boolean;
+  embedded?: boolean;
   onLogout?: () => void;
   onBack?: () => void;
   dark?: boolean;
@@ -325,189 +327,22 @@ export default function DeveloperWorkspace({
     { id: "vault", label: "Credentials & API Vault", icon: KeyRound },
   ];
 
-  return (
-    <div className={`luxury-app ${dark ? "dark-theme" : "light-theme"} h-screen w-full overflow-hidden flex flex-row ${bgMain} font-sans antialiased transition-colors duration-200`}>
-      {/* SIDEBAR NAVIGATION */}
-      <aside className={`w-[260px] shrink-0 hidden md:flex flex-col border-r ${bgSidebar} h-screen z-20`}>
-        {/* Brand Header */}
-        <div className="p-5 border-b border-inherit flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-base border ${
-              dark 
-                ? "bg-[#171f30] border-[#222d42] text-[#cca45f] shadow-[0_0_15px_rgba(204,164,95,0.15)]" 
-                : "bg-white border-[#eee6da] text-[#a07432] shadow-sm"
-            }`}>
-              Z
-            </div>
-            <div>
-              <div className="font-bold text-[14px] leading-tight flex items-center gap-1.5">
-                ZootechX<span className={dark ? "text-[#cca45f]" : "text-[#a07432]"}>.ai</span>
-                <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${dark ? "bg-[#cca45f]" : "bg-[#a07432]"}`} />
-              </div>
-              <div className={`text-[10px] font-mono uppercase tracking-widest font-semibold ${dark ? "text-[#cca45f]" : "text-[#a07432]"}`}>
-                {admin ? "Engineering Hub" : "Developer Workspace"}
-              </div>
-            </div>
+  const renderTabContent = () => (
+    <>
+      {/* NOTICE BANNER */}
+      {notice && (
+        <div className="flex items-center justify-between rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 text-xs font-semibold text-indigo-300">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={15} />
+            <span>{notice}</span>
           </div>
-          {onBack && (
-            <button
-              onClick={onBack}
-              title="Return to portal"
-              className={`p-1.5 rounded-lg border border-inherit transition ${dark ? "text-slate-400 hover:text-white hover:bg-white/5" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"}`}
-            >
-              <ArrowLeft size={16} />
-            </button>
-          )}
-        </div>
-
-        {/* Navigation List */}
-        <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
-          {navigationItems.map((item) => {
-            const active = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id as any);
-                  setSelected(null);
-                }}
-                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-[13px] font-medium transition-all ${
-                  active
-                    ? (dark ? "bg-[#171f30] text-[#cca45f] border border-[#cca45f]/30 shadow-md font-semibold" : "bg-white text-[#a07432] border border-[#eee6da] shadow-sm font-semibold")
-                    : `${mutedText} ${dark ? "hover:bg-[#121826] hover:text-[#f1f5f9]" : "hover:bg-[#f4eee4] hover:text-[#1c1917]"}`
-                }`}
-              >
-                <item.icon size={18} className={active ? (dark ? "text-[#cca45f]" : "text-[#a07432]") : (dark ? "text-slate-400" : "text-slate-500")} />
-                <span className="flex-1 text-left">{item.label}</span>
-                {item.badge !== undefined && (
-                  <span
-                    className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                      active
-                        ? (dark ? "bg-[#cca45f]/20 text-[#cca45f]" : "bg-[#f5eddf] text-[#a07432]")
-                        : (dark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-700")
-                    }`}
-                  >
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Bottom Actions */}
-        <div className="p-4 border-t border-inherit space-y-2">
-          <button
-            onClick={handleToggleTheme}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition ${dark ? "bg-white/5 text-slate-300 hover:bg-white/10" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-          >
-            {dark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-indigo-600" />}
-            <span>{dark ? "Light Mode" : "Dark Mode"}</span>
+          <button onClick={() => setNotice("")} className="opacity-70 hover:opacity-100">
+            <X size={14} />
           </button>
-
-          {onLogout && (
-            <button
-              onClick={onLogout}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition"
-            >
-              <LogOut size={15} />
-              <span>Log out</span>
-            </button>
-          )}
         </div>
-      </aside>
+      )}
 
-      {/* MAIN VIEWPORT */}
-      <div className="flex-1 min-w-0 h-screen flex flex-col overflow-hidden">
-        {/* TOP BAR */}
-        <header className={`h-16 shrink-0 border-b flex items-center justify-between px-6 backdrop-blur-xl ${bgSidebar}`}>
-          <div className="flex items-center gap-3">
-            <h2 className={`text-lg font-bold tracking-tight capitalize ${dark ? "text-white" : "text-slate-900"}`}>
-              {activeTab === "projects"
-                ? "Projects & Tasks"
-                : activeTab === "team"
-                ? "Team Developers"
-                : activeTab === "assign"
-                ? "Assign Project"
-                : "Credentials & Secret Vault"}
-            </h2>
-            <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 text-[10px] font-bold text-indigo-400">
-              {admin ? "Super Admin Access" : "Developer Role"}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Nocturne & Ivory Theme Toggle Button */}
-            <button
-              onClick={handleToggleTheme}
-              title={dark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
-              aria-label={dark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
-              className={`flex items-center gap-2.5 px-3 py-1.5 rounded-full border transition-all ${
-                dark 
-                  ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9] hover:border-[#cca45f]/40 shadow-sm" 
-                  : "bg-white border-[#eee6da] text-[#1c1917] hover:border-[#a07432]/40 shadow-sm"
-              }`}
-            >
-              <span className="text-[10px] font-bold tracking-widest uppercase font-mono">
-                {dark ? "NOCTURNE" : "IVORY"}
-              </span>
-              <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${
-                dark ? "bg-[#090d16] justify-end" : "bg-[#ede5d8] justify-start"
-              }`}>
-                <div className={`w-3 h-3 rounded-full shadow transition-transform ${
-                  dark ? "bg-[#cca45f]" : "bg-[#b88a44]"
-                }`} />
-              </div>
-            </button>
-
-            <button
-              onClick={() => void load()}
-              title="Refresh projects"
-              className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
-                dark ? "border-white/10 text-slate-400 hover:text-white hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-              }`}
-            >
-              <RefreshCw size={15} className={loading ? "animate-spin text-indigo-400" : ""} />
-            </button>
-
-            {/* Mobile tab buttons */}
-            <div className="flex md:hidden items-center gap-1">
-              {navigationItems.map((it) => (
-                <button
-                  key={it.id}
-                  onClick={() => {
-                    setActiveTab(it.id as any);
-                    setSelected(null);
-                  }}
-                  className={`p-2 rounded-xl border ${
-                    activeTab === it.id
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : (dark ? "border-white/10 text-slate-400 hover:text-white" : "border-slate-200 text-slate-600 hover:bg-slate-100")
-                  }`}
-                >
-                  <it.icon size={16} />
-                </button>
-              ))}
-            </div>
-          </div>
-        </header>
-
-        {/* CONTENT AREA */}
-        <main className={`flex-1 h-full overflow-y-auto p-6 lg:p-8 space-y-6 ${bgMain}`}>
-          {/* NOTICE BANNER */}
-          {notice && (
-            <div className="flex items-center justify-between rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 text-xs font-semibold text-indigo-300">
-              <div className="flex items-center gap-2">
-                <AlertCircle size={15} />
-                <span>{notice}</span>
-              </div>
-              <button onClick={() => setNotice("")} className="opacity-70 hover:opacity-100">
-                <X size={14} />
-              </button>
-            </div>
-          )}
-
-          {/* TAB 1: PROJECTS */}
+      {/* TAB 1: PROJECTS */}
           {activeTab === "projects" && (
             <div className="space-y-6 max-w-[1600px] mx-auto w-full">
               {/* TOP STATS CARDS */}
@@ -883,85 +718,6 @@ export default function DeveloperWorkspace({
                   );
                 })}
               </div>
-
-              {/* CREATE DEVELOPER MODAL */}
-              <AnimatePresence>
-                {showCreateDevModal && (
-                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                    <div
-                      className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
-                      onClick={() => setShowCreateDevModal(false)}
-                    />
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      className={`relative w-full max-w-md rounded-3xl border p-6 shadow-2xl ${bgCard}`}
-                    >
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-bold text-base">Create Developer Login</h3>
-                        <button
-                          onClick={() => setShowCreateDevModal(false)}
-                          className="text-slate-400 hover:text-white"
-                        >
-                          <X size={18} />
-                        </button>
-                      </div>
-                      <form onSubmit={createDeveloper} className="space-y-3">
-                        <div>
-                          <label className="block text-xs font-semibold mb-1">Developer Full Name</label>
-                          <input
-                            required
-                            value={developerForm.name}
-                            onChange={(e) => setDeveloperForm({ ...developerForm, name: e.target.value })}
-                            placeholder="e.g. Rahul Sharma"
-                            className={`h-10 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold mb-1">Work Email</label>
-                          <input
-                            required
-                            type="email"
-                            value={developerForm.email}
-                            onChange={(e) => setDeveloperForm({ ...developerForm, email: e.target.value })}
-                            placeholder="e.g. rahul@company.com"
-                            className={`h-10 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold mb-1">Temporary Password</label>
-                          <input
-                            required
-                            type="password"
-                            minLength={8}
-                            value={developerForm.password}
-                            onChange={(e) => setDeveloperForm({ ...developerForm, password: e.target.value })}
-                            placeholder="Min 8 characters"
-                            className={`h-10 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
-                          />
-                        </div>
-                        <div className="pt-2 flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setShowCreateDevModal(false)}
-                            className="h-9 px-4 rounded-xl border border-inherit text-xs font-semibold"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={saving === "developer"}
-                            className="h-9 px-5 rounded-xl bg-indigo-600 text-xs font-semibold text-white shadow hover:bg-indigo-700 disabled:opacity-50"
-                          >
-                            {saving === "developer" ? "Creating..." : "Create Account"}
-                          </button>
-                        </div>
-                      </form>
-                    </motion.div>
-                  </div>
-                )}
-              </AnimatePresence>
             </div>
           )}
 
@@ -1088,8 +844,371 @@ export default function DeveloperWorkspace({
               <CredentialsVault dark={dark} />
             </div>
           )}
-        </main>
-      </div>
-    </div>
-  );
-}
+
+          {/* CREATE DEVELOPER MODAL */}
+          <AnimatePresence>
+            {showCreateDevModal && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div
+                  className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+                  onClick={() => setShowCreateDevModal(false)}
+                />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className={`relative w-full max-w-md rounded-3xl border p-6 shadow-2xl ${bgCard}`}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-base">Create Developer Login</h3>
+                    <button
+                      onClick={() => setShowCreateDevModal(false)}
+                      className="text-slate-400 hover:text-white"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <form onSubmit={createDeveloper} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold mb-1">Developer Full Name</label>
+                      <input
+                        required
+                        value={developerForm.name}
+                        onChange={(e) => setDeveloperForm({ ...developerForm, name: e.target.value })}
+                        placeholder="e.g. Rahul Sharma"
+                        className={`h-10 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1">Work Email</label>
+                      <input
+                        required
+                        type="email"
+                        value={developerForm.email}
+                        onChange={(e) => setDeveloperForm({ ...developerForm, email: e.target.value })}
+                        placeholder="e.g. rahul@company.com"
+                        className={`h-10 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1">Temporary Password</label>
+                      <input
+                        required
+                        type="password"
+                        minLength={8}
+                        value={developerForm.password}
+                        onChange={(e) => setDeveloperForm({ ...developerForm, password: e.target.value })}
+                        placeholder="Min 8 characters"
+                        className={`h-10 w-full rounded-xl border px-3 text-xs outline-none ${inputBg}`}
+                      />
+                    </div>
+                    <div className="pt-2 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCreateDevModal(false)}
+                        className="h-9 px-4 rounded-xl border border-inherit text-xs font-semibold"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={saving === "developer"}
+                        className="h-9 px-5 rounded-xl bg-indigo-600 text-xs font-semibold text-white shadow hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {saving === "developer" ? "Creating..." : "Create Account"}
+                      </button>
+                    </div>
+                  </form>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+        </>
+      );
+
+      if (embedded) {
+        return (
+          <div className="max-w-[1600px] mx-auto w-full space-y-6">
+            {/* PAGE HEADER MATCHING SUPER ADMIN PAGES */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h1 className={`text-[22px] font-bold ${dark ? "text-white" : "text-slate-900"}`}>
+                    Developers & Projects
+                  </h1>
+                  <span className="rounded-full bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 text-[10px] font-bold text-indigo-400">
+                    Engineering Hub
+                  </span>
+                </div>
+                <p className={`text-[13px] ${mutedText} mt-0.5`}>
+                  Manage engineering team, monitor delivery progress, and assign client tasks
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={() => void load()}
+                  title="Refresh projects"
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
+                    dark ? "border-white/10 text-slate-400 hover:text-white hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  <RefreshCw size={15} className={loading ? "animate-spin text-indigo-400" : ""} />
+                </button>
+
+                {admin && (
+                  <>
+                    <button
+                      onClick={() => setShowCreateDevModal(true)}
+                      className={`h-9 px-3.5 rounded-xl border text-[13px] font-semibold flex items-center gap-2 transition ${
+                        dark
+                          ? "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <Users size={15} />
+                      <span>Add Developer</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setActiveTab("assign");
+                        setSelected(null);
+                      }}
+                      className="h-9 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[13px] font-medium flex items-center gap-2 shadow-sm hover:opacity-95"
+                    >
+                      <Plus size={16} />
+                      <span>Assign Project</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* SUBNAV TABS */}
+            <div className={`flex items-center gap-2 border-b pb-3 ${dark ? "border-white/10" : "border-[#eee6da]"}`}>
+              {[
+                { id: "projects", label: "Projects & Tasks", icon: FolderKanban, badge: projects.length },
+                ...(admin ? [{ id: "team", label: "Team Members", icon: Users, badge: developers.length }] : []),
+                ...(admin ? [{ id: "assign", label: "Assign Project", icon: Plus }] : []),
+              ].map((tab) => {
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setActiveTab(tab.id as any);
+                      setSelected(null);
+                    }}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                      active
+                        ? (dark
+                            ? "bg-[#171f30] text-[#cca45f] border border-[#cca45f]/30 shadow-sm font-semibold"
+                            : "bg-white text-[#a07432] border border-[#eee6da] shadow-sm font-semibold")
+                        : `${mutedText} hover:${dark ? "bg-white/5 text-[#f1f5f9]" : "bg-[#f4eee4] text-[#1c1917]"}`
+                    }`}
+                  >
+                    <tab.icon size={15} />
+                    <span>{tab.label}</span>
+                    {tab.badge !== undefined && (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                          active
+                            ? (dark ? "bg-[#cca45f]/20 text-[#cca45f]" : "bg-[#f5eddf] text-[#a07432]")
+                            : (dark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-700")
+                        }`}
+                      >
+                        {tab.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* TAB BODY CONTENT */}
+            {renderTabContent()}
+          </div>
+        );
+      }
+
+      return (
+        <div className={`luxury-app ${dark ? "dark-theme" : "light-theme"} h-screen w-full overflow-hidden flex flex-row ${bgMain} font-sans antialiased transition-colors duration-200`}>
+          {/* SIDEBAR NAVIGATION */}
+          <aside className={`w-[260px] shrink-0 hidden md:flex flex-col border-r ${bgSidebar} h-screen z-20`}>
+            {/* Brand Header */}
+            <div className="p-5 border-b border-inherit flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-base border ${
+                  dark 
+                    ? "bg-[#171f30] border-[#222d42] text-[#cca45f] shadow-[0_0_15px_rgba(204,164,95,0.15)]" 
+                    : "bg-white border-[#eee6da] text-[#a07432] shadow-sm"
+                }`}>
+                  Z
+                </div>
+                <div>
+                  <div className="font-bold text-[14px] leading-tight flex items-center gap-1.5">
+                    ZootechX<span className={dark ? "text-[#cca45f]" : "text-[#a07432]"}>.ai</span>
+                    <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${dark ? "bg-[#cca45f]" : "bg-[#a07432]"}`} />
+                  </div>
+                  <div className={`text-[10px] font-mono uppercase tracking-widest font-semibold ${dark ? "text-[#cca45f]" : "text-[#a07432]"}`}>
+                    {admin ? "Engineering Hub" : "Developer Workspace"}
+                  </div>
+                </div>
+              </div>
+              {onBack && (
+                <button
+                  onClick={onBack}
+                  title="Return to portal"
+                  className={`p-1.5 rounded-lg border border-inherit transition ${dark ? "text-slate-400 hover:text-white hover:bg-white/5" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"}`}
+                >
+                  <ArrowLeft size={16} />
+                </button>
+              )}
+            </div>
+
+            {/* Navigation List */}
+            <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
+              {navigationItems.map((item) => {
+                const active = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id as any);
+                      setSelected(null);
+                    }}
+                    className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-[13px] font-medium transition-all ${
+                      active
+                        ? (dark ? "bg-[#171f30] text-[#cca45f] border border-[#cca45f]/30 shadow-md font-semibold" : "bg-white text-[#a07432] border border-[#eee6da] shadow-sm font-semibold")
+                        : `${mutedText} ${dark ? "hover:bg-[#121826] hover:text-[#f1f5f9]" : "hover:bg-[#f4eee4] hover:text-[#1c1917]"}`
+                    }`}
+                  >
+                    <item.icon size={18} className={active ? (dark ? "text-[#cca45f]" : "text-[#a07432]") : (dark ? "text-slate-400" : "text-slate-500")} />
+                    <span className="flex-1 text-left">{item.label}</span>
+                    {item.badge !== undefined && (
+                      <span
+                        className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                          active
+                            ? (dark ? "bg-[#cca45f]/20 text-[#cca45f]" : "bg-[#f5eddf] text-[#a07432]")
+                            : (dark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-700")
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Bottom Actions */}
+            <div className="p-4 border-t border-inherit space-y-2">
+              <button
+                onClick={handleToggleTheme}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition ${dark ? "bg-white/5 text-slate-300 hover:bg-white/10" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+              >
+                {dark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-indigo-600" />}
+                <span>{dark ? "Light Mode" : "Dark Mode"}</span>
+              </button>
+
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition"
+                >
+                  <LogOut size={15} />
+                  <span>Log out</span>
+                </button>
+              )}
+            </div>
+          </aside>
+
+          {/* MAIN VIEWPORT */}
+          <div className="flex-1 min-w-0 h-screen flex flex-col overflow-hidden">
+            {/* TOP BAR */}
+            <header className={`h-16 shrink-0 border-b flex items-center justify-between px-6 backdrop-blur-xl ${bgSidebar}`}>
+              <div className="flex items-center gap-3">
+                <h2 className={`text-lg font-bold tracking-tight capitalize ${dark ? "text-white" : "text-slate-900"}`}>
+                  {activeTab === "projects"
+                    ? "Projects & Tasks"
+                    : activeTab === "team"
+                    ? "Team Developers"
+                    : activeTab === "assign"
+                    ? "Assign Project"
+                    : "Credentials & Secret Vault"}
+                </h2>
+                <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 text-[10px] font-bold text-indigo-400">
+                  {admin ? "Super Admin Access" : "Developer Role"}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {/* Day & Night Theme Toggle Button */}
+                <button
+                  onClick={handleToggleTheme}
+                  title={dark ? "Switch to Day (Light Mode)" : "Switch to Night (Dark Mode)"}
+                  aria-label={dark ? "Switch to Day (Light Mode)" : "Switch to Night (Dark Mode)"}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${
+                    dark 
+                      ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9] hover:border-[#cca45f]/40 shadow-sm" 
+                      : "bg-white border-[#eee6da] text-[#1c1917] hover:border-[#a07432]/40 shadow-sm"
+                  }`}
+                >
+                  {dark ? (
+                    <Moon size={13} className="text-[#cca45f]" />
+                  ) : (
+                    <Sun size={13} className="text-amber-500" />
+                  )}
+                  <span className="text-[10px] font-bold tracking-widest uppercase font-mono">
+                    {dark ? "NIGHT" : "DAY"}
+                  </span>
+                  <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${
+                    dark ? "bg-[#090d16] justify-end" : "bg-[#ede5d8] justify-start"
+                  }`}>
+                    <div className={`w-3 h-3 rounded-full shadow transition-transform ${
+                      dark ? "bg-[#cca45f]" : "bg-[#b88a44]"
+                    }`} />
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => void load()}
+                  title="Refresh projects"
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
+                    dark ? "border-white/10 text-slate-400 hover:text-white hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  <RefreshCw size={15} className={loading ? "animate-spin text-indigo-400" : ""} />
+                </button>
+
+                {/* Mobile tab buttons */}
+                <div className="flex md:hidden items-center gap-1">
+                  {navigationItems.map((it) => (
+                    <button
+                      key={it.id}
+                      onClick={() => {
+                        setActiveTab(it.id as any);
+                        setSelected(null);
+                      }}
+                      className={`p-2 rounded-xl border ${
+                        activeTab === it.id
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : (dark ? "border-white/10 text-slate-400 hover:text-white" : "border-slate-200 text-slate-600 hover:bg-slate-100")
+                      }`}
+                    >
+                      <it.icon size={16} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </header>
+
+            {/* CONTENT AREA */}
+            <main className={`flex-1 h-full overflow-y-auto p-6 lg:p-8 space-y-6 ${bgMain}`}>
+              {renderTabContent()}
+            </main>
+          </div>
+        </div>
+      );
+    }

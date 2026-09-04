@@ -280,19 +280,24 @@ export default function SubAdminDashboard({ onLogout, dark: propDark, onToggleTh
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Nocturne & Ivory Theme Toggle Button */}
+            {/* Day & Night Theme Toggle Button */}
             <button
               onClick={handleToggleTheme}
-              title={dark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
-              aria-label={dark ? "Switch to Ivory (Light Mode)" : "Switch to Nocturne (Dark Mode)"}
-              className={`flex items-center gap-2.5 px-3 py-1.5 rounded-full border transition-all ${
+              title={dark ? "Switch to Day (Light Mode)" : "Switch to Night (Dark Mode)"}
+              aria-label={dark ? "Switch to Day (Light Mode)" : "Switch to Night (Dark Mode)"}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${
                 dark 
                   ? "bg-[#121826] border-[#1e293b] text-[#f1f5f9] hover:border-[#cca45f]/40 shadow-sm" 
                   : "bg-white border-[#eee6da] text-[#1c1917] hover:border-[#a07432]/40 shadow-sm"
               }`}
             >
+              {dark ? (
+                <Moon size={13} className="text-[#cca45f]" />
+              ) : (
+                <Sun size={13} className="text-amber-500" />
+              )}
               <span className="text-[10px] font-bold tracking-widest uppercase font-mono">
-                {dark ? "NOCTURNE" : "IVORY"}
+                {dark ? "NIGHT" : "DAY"}
               </span>
               <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${
                 dark ? "bg-[#090d16] justify-end" : "bg-[#ede5d8] justify-start"
