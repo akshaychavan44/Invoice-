@@ -29,9 +29,16 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: loginEmail, password: loginPass }),
       });
-      const data = await response.json();
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch {
+        const text = await response.text().catch(() => "");
+        setError(text || `Server returned error status ${response.status}`);
+        return;
+      }
       if (!response.ok) {
-        setError(data.message || "Invalid email or password");
+        setError(data?.message || "Invalid email or password");
         return;
       }
       localStorage.setItem("zootechx_token", data.token);
@@ -63,9 +70,15 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const loginData = await loginResponse.json();
+      let loginData: any = null;
+      try {
+        loginData = await loginResponse.json();
+      } catch {
+        setError(`Unable to authenticate (status ${loginResponse.status})`);
+        return;
+      }
       if (!loginResponse.ok) {
-        setError(loginData.message || "Your current password is incorrect.");
+        setError(loginData?.message || "Your current password is incorrect.");
         return;
       }
       const response = await fetch(`${apiUrl}/api/auth/change-password`, {
@@ -76,9 +89,15 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         },
         body: JSON.stringify({ currentPassword: password, newPassword }),
       });
-      const data = await response.json();
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch {
+        setError(`Unable to change password (status ${response.status})`);
+        return;
+      }
       if (!response.ok) {
-        setError(data.message || "Unable to change password.");
+        setError(data?.message || "Unable to change password.");
         return;
       }
       setPassword("");

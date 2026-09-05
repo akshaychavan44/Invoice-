@@ -102,16 +102,19 @@ import {
 import { findDemoUser, isDemoPassword } from "./demoUsers";
 type UserRow = { id: string; name: string; email: string; role: "SUPER_ADMIN" | "SUB_ADMIN" | "SALES" | "DEVELOPER" | "DIGITAL_MARKETING"; password_hash: string; must_change_password?: boolean; is_active?: boolean };
 const app = express();
-const frontendOrigin = process.env.FRONTEND_URL ?? "http://localhost:3000";
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({
-  origin(origin, callback) {
-    // Permit the configured deployment plus any local Next.js development port.
-    if (!origin || origin === frontendOrigin || /^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
-    return callback(new Error("Origin not allowed by CORS"));
-  },
+  origin: true,
+  credentials: true,
 }));
-app.use(express.json({ limit: "1mb" })); app.use(rateLimit({ windowMs: 900_000, limit: 5_000, standardHeaders: "draft-7" }));
+app.use(express.json({ limit: "1mb" }));
+app.use((req, _res, next) => {
+  if (!req.url.startsWith("/api")) {
+    req.url = `/api${req.url.startsWith("/") ? "" : "/"}${req.url}`;
+  }
+  next();
+});
+app.use(rateLimit({ windowMs: 900_000, limit: 5_000, standardHeaders: "draft-7" }));
 const login = z.object({ email: z.string().email(), password: z.string().min(8) });
 const changePasswordInput = z.object({ currentPassword: z.string().min(8), newPassword: z.string().min(8).max(128) });
 const leadInput = z.object({ fullName: z.string().min(2), company: z.string().max(160).optional(), email: z.string().email().optional(), phone: z.string().max(30).optional(), source: z.string().min(2), notes: z.string().optional(), status: z.enum(["NEW", "CONTACTED", "FOLLOW_UP", "INTERESTED", "QUOTATION_SENT", "NEGOTIATION", "CONVERTED", "LOST"]).optional() });
