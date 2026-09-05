@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight, BarChart3, Eye, EyeOff, ShieldCheck, Sparkles,
-  Mail, Lock, CheckCircle2, Megaphone, TrendingUp
+  Mail, Lock, CheckCircle2
 } from "lucide-react";
 import { apiUrl, AuthUser } from "../lib/api";
 
@@ -211,63 +211,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               </div>
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shadow-inner">
                 <ShieldCheck size={22} />
-              </div>
-            </div>
-
-            {/* Quick Demo Access Pills */}
-            <div className="mb-5 rounded-2xl bg-white/[0.03] border border-white/[0.08] p-2.5">
-              <div className="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                <span className="flex items-center gap-1.5">
-                  <Sparkles size={12} className="text-amber-400" /> Quick Role Access
-                </span>
-                <span className="text-[10px] text-slate-500 font-mono">1-Click Demo Fill</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail("marketing@erp.com");
-                    setPassword("ChangeMe123!");
-                    setError("");
-                  }}
-                  className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs transition border ${
-                    email === "marketing@erp.com"
-                      ? "bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.25)]"
-                      : "bg-slate-800/40 border-slate-700/60 text-slate-300 hover:border-cyan-500/40 hover:bg-slate-800/70"
-                  }`}
-                >
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400">
-                    <Megaphone size={12} />
-                  </div>
-                  <div className="truncate">
-                    <div className="font-semibold text-[11px] text-white flex items-center gap-1">
-                      Digital Mktg <span className="rounded bg-cyan-400/20 px-1 text-[9px] text-cyan-300 font-mono">NEW</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400 truncate">marketing@erp.com</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail("admin@erp.com");
-                    setPassword("ChangeMe123!");
-                    setError("");
-                  }}
-                  className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs transition border ${
-                    email === "admin@erp.com"
-                      ? "bg-indigo-500/20 border-indigo-400 text-indigo-200 shadow-[0_0_12px_rgba(99,102,241,0.25)]"
-                      : "bg-slate-800/40 border-slate-700/60 text-slate-300 hover:border-indigo-500/40 hover:bg-slate-800/70"
-                  }`}
-                >
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-400">
-                    <ShieldCheck size={12} />
-                  </div>
-                  <div className="truncate">
-                    <div className="font-semibold text-[11px] text-white">Super Admin</div>
-                    <div className="text-[10px] text-slate-400 truncate">admin@erp.com</div>
-                  </div>
-                </button>
               </div>
             </div>
 
