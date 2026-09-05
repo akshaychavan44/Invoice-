@@ -323,6 +323,10 @@ const seedSows: ScopeOfWork[] = [
     project_name: "Global Fleet Tracking & Dispatch Web Portal",
     template_id: "tpl-web",
     template_name: "Custom Website / Web App",
+    template_version: 1,
+    template_version_label: "v1.0",
+    version: 1,
+    version_label: "v1.0",
     scope_raw: "1. Real-time GPS Telematics Dashboard with Mapbox GL\n2. Automated Driver Route Optimization Engine\n3. Driver Mobile PWA with Proof-of-Delivery Signatures\n4. Cloud SQL Database Replication and Daily Backup Pipeline",
     rendered_document: `# SCOPE OF WORK (SOW)
 ## Document Ref: SOW-2026-001
@@ -655,9 +659,10 @@ export function listSowTemplates(): SowTemplate[] {
   return initialTemplates;
 }
 
-export async function listSows(): Promise<ScopeOfWork[]> {
+export async function listSows(clientId?: string): Promise<ScopeOfWork[]> {
   const store = await readStore();
-  return store.sows.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const filtered = clientId ? store.sows.filter(s => s.client_id === clientId) : store.sows;
+  return filtered.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 }
 
 export async function getSowById(id: string): Promise<ScopeOfWork | undefined> {
