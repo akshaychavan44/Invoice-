@@ -559,7 +559,7 @@ export default function DigitalMarketingWorkspace({
   const pillOutline = dark ? "bg-[#161b22] border-[#30363d] text-[#c9d1d9] hover:bg-[#21262d]" : "bg-white/80 border-[#ded8ce] text-[#222222] hover:bg-white";
 
   return (
-    <div className={`min-h-screen w-full transition-colors duration-200 ${pageBg}`}>
+    <div className={`h-screen w-full overflow-y-auto transition-colors duration-200 ${pageBg}`}>
       {/* Toast Notice */}
       <AnimatePresence>
         {notice && (
@@ -700,8 +700,9 @@ export default function DigitalMarketingWorkspace({
       {/* MAIN CONTAINER */}
       <main className="mx-auto w-full max-w-7xl px-4 sm:px-8 py-8 sm:py-12 space-y-12">
         {/* ========================================================================= */}
-        {/* EDITORIAL HERO SECTION (100% PRESERVING AESTHETICS & LAYOUT) */}
+        {/* EDITORIAL HERO SECTION (SHOWN ON OVERVIEW) */}
         {/* ========================================================================= */}
+        {activeTab === "overview" && (
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
           {/* Left Column: Quiet Luxury Headline & Actions */}
           <div className="lg:col-span-6 space-y-6 pt-2">
@@ -876,6 +877,7 @@ export default function DigitalMarketingWorkspace({
             </div>
           </div>
         </section>
+        )}
 
         {/* ========================================================================= */}
         {/* VIEW 1: AGENCY OVERVIEW */}
